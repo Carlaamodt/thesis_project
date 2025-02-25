@@ -14,7 +14,7 @@ Download Code from GitHub to VS Code (2 Steps)
 
 If you need to update your local code from GitHub, follow these 2 steps:
 
-1. Go to your project folder: cd ~/thesis
+1. Go to your project folder: cd ~/thesis_project
 2. Pull the latest code from GitHub: git pull origin main
 
 Now your local code is up to date.
