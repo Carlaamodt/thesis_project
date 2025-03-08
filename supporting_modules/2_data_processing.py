@@ -58,29 +58,34 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     return merged
 
 #############################
-### Compute Goodwill Accumulation (GA) ###
+### Compute Goodwill Intensity ###
 #############################
 
 def compute_ga_factors(df):
-    """Computes Goodwill Accumulation (GA) factor based on changes in goodwill."""
+    """Computes Goodwill Intensity as percentage change in goodwill."""
 
-    print("📊 Calculating Goodwill Accumulation (GA) factors...")
+    print("📊 Calculating Goodwill Intensity...")
 
     # Sort data by firm and time
     df = df.sort_values(by=['gvkey', 'date'])
 
-    # Compute changes in Goodwill
-    df['GA1'] = df.groupby('gvkey')['gdwl'].diff() / df['at']  # Change in goodwill / total assets
-    df['GA2'] = df.groupby('gvkey')['gdwl'].diff() / df['ceq']  # Change in goodwill / common equity
+    # Compute percentage change in Goodwill
+    df['gdwl_prev'] = df.groupby('gvkey')['gdwl'].shift(1)  # Previous year's goodwill
+    df['goodwill_intensity'] = (df['gdwl'] - df['gdwl_prev']) / df['gdwl_prev']
 
-    # Winsorize GA factors to avoid extreme outliers (1st & 99th percentile)
-    df['GA1'] = df['GA1'].clip(df['GA1'].quantile(0.01), df['GA1'].quantile(0.99))
-    df['GA2'] = df['GA2'].clip(df['GA2'].quantile(0.01), df['GA2'].quantile(0.99))
+    # Handle edge cases: missing, zero denominator, or infinite values
+    df['goodwill_intensity'] = df['goodwill_intensity'].fillna(0).replace([float('inf'), -float('inf')], 0)
 
-    # Drop rows where GA could not be computed (first observations)
-    df = df.dropna(subset=['GA1', 'GA2'])
+    # Winsorize to avoid extreme outliers (1st & 99th percentile)
+    df['goodwill_intensity'] = df['goodwill_intensity'].clip(
+        df['goodwill_intensity'].quantile(0.01), 
+        df['goodwill_intensity'].quantile(0.99)
+    )
+    df = df[(df['ret'] >= -1) & (df['ret'] <= 1)]  # Exclude returns outside [-100%, 100%]
+    # Drop rows where goodwill_intensity could not be computed (e.g., first year)
+    df = df.dropna(subset=['goodwill_intensity'])
 
-    print(f"✅ GA factors computed. Remaining rows: {df.shape[0]}")
+    print(f"✅ Goodwill Intensity computed. Remaining rows: {df.shape[0]}")
     return df
 
 #############################

@@ -21,7 +21,7 @@ compustat = conn.raw_sql("""
                     and datafmt = 'STD'
                     and popsrc = 'D'
                     and consol = 'C'
-                    and datadate >= '01/01/2003'
+                    and datadate >= '01/01/2002'
                     order by gvkey, fyear, datadate
                     """, date_cols = ['datadate'])
                     
