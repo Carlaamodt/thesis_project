@@ -81,11 +81,34 @@ def compute_ga_factors(df):
         df['goodwill_intensity'].quantile(0.01), 
         df['goodwill_intensity'].quantile(0.99)
     )
+
+    # Exclude extreme returns
     df = df[(df['ret'] >= -1) & (df['ret'] <= 1)]  # Exclude returns outside [-100%, 100%]
-    # Drop rows where goodwill_intensity could not be computed (e.g., first year)
+
+    # Drop rows where goodwill_intensity could not be computed
     df = df.dropna(subset=['goodwill_intensity'])
 
     print(f"✅ Goodwill Intensity computed. Remaining rows: {df.shape[0]}")
+    return df
+
+#############################
+### June Scheme Adjustment ###
+#############################
+
+def apply_june_scheme(df):
+    """Aligns goodwill intensity to July-June portfolio periods."""
+    print("🔁 Applying June Scheme Adjustment for portfolio formation...")
+
+    # Fiscal year for info
+    df['fiscal_year'] = df['date'].dt.year
+
+    # Lag goodwill intensity for portfolio formation (using last year's data)
+    df['ga_lagged'] = df.groupby('gvkey')['goodwill_intensity'].shift(1)
+
+    # Align to Fama-French July-June year
+    df['FF_year'] = df['date'].dt.year + np.where(df['date'].dt.month <= 6, 0, 1)
+
+    print(f"✅ June Scheme applied. Sample:\n{df[['gvkey', 'date', 'ga_lagged', 'FF_year']].head(5)}")
     return df
 
 #############################
@@ -103,7 +126,7 @@ def adjust_for_delistings(df, crsp_delist):
     # If a firm has a delisting return, update the last return
     df['ret'] = np.where(df['dlret'].notna(), df['dlret'], df['ret'])
 
-    # Drop delisted stocks after their last trading day
+    # Drop delisted stocks after last trade date
     df = df[df['date'] <= df['dlstdt'].fillna(pd.Timestamp('2023-12-31'))]
 
     print(f"✅ Delisting adjustments done. Rows remaining: {df.shape[0]}")
@@ -135,6 +158,9 @@ def main():
 
     # Compute GA factors
     processed_data = compute_ga_factors(merged_data)
+
+    # Apply June scheme
+    processed_data = apply_june_scheme(processed_data)
 
     # Adjust for delisting bias
     final_data = adjust_for_delistings(processed_data, crsp_delist)
