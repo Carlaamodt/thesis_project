@@ -1,0 +1,13 @@
+# Ignore everything
+*
+
+# But not Python files
+!*.py
+
+# But not folders (to allow Python files inside folders)
+!*/
+
+# Optional: Keep your current ignores (in case you want to be extra explicit)
+.DS_Store
+__import_files__/*.csv
+*.csv
