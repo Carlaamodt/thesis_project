@@ -1,13 +1,12 @@
-# Ignore everything
-*
+# Python cache files
+*.pyc
+__pycache__/
 
-# But not Python files
-!*.py
-
-# But not folders (to allow Python files inside folders)
-!*/
-
-# Optional: Keep your current ignores (in case you want to be extra explicit)
-.DS_Store
-__import_files__/*.csv
+# Data and output files
 *.csv
+*.xlsx
+*.xls
+*.png
+
+# System files
+.DS_Store
