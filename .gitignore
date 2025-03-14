@@ -1,4 +1,4 @@
-# Python cache files
+# Python cache
 *.pyc
 __pycache__/
 
@@ -7,6 +7,7 @@ __pycache__/
 *.xlsx
 *.xls
 *.png
+*.txt
 
 # System files
 .DS_Store

@@ -37,22 +37,62 @@ def resample_to_annual(df):
     print(f"✅ Data resampled to annual. Total rows: {df.shape[0]}")
     return df
 
+#############################COUNT FIRMS PER YEAR#############################
+def count_firms_per_year(df):
+    """Counts number of firms per year and number of unique GA values."""
+    firm_counts = df.groupby('year').agg(
+        num_firms=('gvkey', 'nunique'),
+        num_unique_ga=('goodwill_intensity', 'nunique')
+    ).reset_index()
+
+    print("\n🔍 Firms and unique GA per year:")
+    print(firm_counts)
+    
+    # Save output for later inspection
+    firm_counts.to_excel("analysis_output/firms_unique_ga_per_year.xlsx", index=False)
+    print("💾 Firm counts saved to 'analysis_output/firms_unique_ga_per_year.xlsx'")
+    
+    return firm_counts
+
 #############################
-### Sort Firms into Quintiles ###
+### Sort Firms into Quintiles (Improved) ###
 #############################
 
 def assign_quintiles(df, ga_column="goodwill_intensity"):
-    """Assigns firms into quintiles based on goodwill_intensity."""
-    print("📊 Sorting firms into quintiles...")
+    """Assigns firms into quintiles based on goodwill_intensity, handles zeros carefully."""
+    print("📊 Sorting firms into quintiles (handling zeros carefully)...")
 
-    def safe_qcut(x):
+    # Loop over years
+    for year, group in df.groupby('year'):
+        num_firms = group.shape[0]
+        num_unique_ga = group[ga_column].nunique()
+
+        print(f"Year {year}: {num_firms} firms, {num_unique_ga} unique GA values")
+
+        # Skip if too few firms or too few unique values
+        if num_firms < 50 or num_unique_ga < 5:
+            print(f"⚠️ Skipping year {year}: too few firms or GA values")
+            continue
+
+        # Separate zero GA firms to assign later
+        non_zero_group = group[group[ga_column] != 0]
+        zero_group = group[group[ga_column] == 0]
+
+        # Check if enough non-zero to form quintiles
+        if non_zero_group.shape[0] < 5:
+            print(f"⚠️ Skipping year {year}: not enough non-zero GA to form quintiles")
+            continue
+
         try:
-            return pd.qcut(x, q=5, labels=[1, 2, 3, 4, 5], duplicates='drop')
-        except ValueError:
-            print(f"⚠️ Warning: Not enough unique values for 5 quintiles in year {x.name}. Filling with NaN.")
-            return pd.Series(np.nan, index=x.index)
+            # Assign quintiles for non-zero GA firms (convert to int to avoid dtype issues)
+            non_zero_quintiles = pd.qcut(non_zero_group[ga_column], q=5, labels=[1, 2, 3, 4, 5]).astype(int)
+            df.loc[non_zero_group.index, 'quintile'] = non_zero_quintiles
+            # Assign zero GA firms to quintile 1
+            df.loc[zero_group.index, 'quintile'] = 1
+        except ValueError as e:
+            print(f"⚠️ ValueError in year {year}: {e}")
 
-    df['quintile'] = df.groupby('year')[ga_column].transform(safe_qcut)
+    # Now this part must be OUTSIDE of the loop (correct indentation)
     df = df.dropna(subset=['quintile'])
     df['quintile'] = df['quintile'].astype(int)
 
@@ -70,7 +110,7 @@ def compute_portfolio_returns(df, weighting="equal"):
     df['ret'] = pd.to_numeric(df['ret'], errors='coerce')
 
     if weighting == "value":
-        df['mkt_cap'] = df['csho'] * df['prc'].abs()  # Market Cap = Shares * Price (abs for negative prices)
+        df['mkt_cap'] = df['csho'] * df['prc'].abs()  # Market Cap = Shares * Price
         df['weight'] = df.groupby(['year', 'quintile'])['mkt_cap'].transform(lambda x: x / x.sum())
         df['weighted_ret'] = df['ret'] * df['weight']
         portfolio_returns = df.groupby(['year', 'quintile'])['weighted_ret'].sum().unstack()
@@ -127,6 +167,7 @@ def main():
     if df is None:
         return  
     df = resample_to_annual(df)
+    count_firms_per_year(df)
     df = assign_quintiles(df, ga_column="goodwill_intensity")
     if df is None:
         return  

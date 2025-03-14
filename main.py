@@ -1,121 +1,52 @@
-import pandas as pd
-import numpy as np
+import subprocess
+import argparse
+import logging
+import sys
+import os
 
-import time
-start = time.time()
-# your function here
-print("Execution time:", time.time() - start)
-
-# -------------------------------
-# 1. LOAD DATA
-# -------------------------------
-# Load data (already cleaned and merged from Compustat/CRSP/Link)
-compustat = pd.read_csv("__import_files__/compustat_20250217.csv", parse_dates=['date'])
-crsp = pd.read_csv("__import_files__/crsp_ret_20250217.csv", parse_dates=['date'])
-
-# -------------------------------
-# 2. PREPARE GOODWILL CHANGE (GA)
-# -------------------------------
-# First, calculate lagged goodwill (by gvkey, fiscal year)
-compustat['gdwl_prev'] = compustat.groupby('gvkey')['gdwl'].shift(1)
-
-# Calculate Goodwill/Assets
-compustat['GA_ratio'] = compustat['gdwl'] / compustat['at']
-
-# Calculate Goodwill Change %
-compustat['GA_change'] = (compustat['gdwl'] - compustat['gdwl_prev']) / compustat['gdwl_prev']
-
-# Handling zeros automatically: If gdwl_prev == 0, this will be inf or NaN; we can leave them or cap if you prefer
-
-# -------------------------------
-# 3. FILTER DATA
-# -------------------------------
-# Basic filters:
-# - Drop missing Goodwill/Assets change
-compustat = compustat.dropna(subset=['GA_change'])
-
-# Define fiscal year-end month for rebalancing
-compustat['fyear'] = pd.to_datetime(compustat['fyear'].astype(str) + '-12-31')
-
-# -------------------------------
-# 4. PORTFOLIO ASSIGNMENT (JUNE each year based on previous year-end data)
-# -------------------------------
-# We align Compustat fiscal year-end to CRSP date
-compustat['june_port_date'] = compustat['fyear'] + pd.DateOffset(months=6)  # Align to next June
-
-# Filter to June dates only (for portfolio formation)
-compustat_june = compustat[['gvkey', 'june_port_date', 'GA_change', 'at']].dropna()
-
-# Assign GA quintiles (5 portfolios)
-compustat_june['GA_quintile'] = compustat_june.groupby('june_port_date')['GA_change'].transform(
-    lambda x: pd.qcut(x, 5, labels=False, duplicates='drop') + 1  # Quintiles labeled 1 (low GA) to 5 (high GA)
+# ------------------- Logging Setup --------------------
+logging.basicConfig(
+    level=logging.INFO,  # Change to DEBUG for more detailed logs
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("pipeline_log.txt"),  # Save log to file
+        logging.StreamHandler(sys.stdout)  # Also print to terminal
+    ]
 )
 
-# -------------------------------
-# 5. LINK TO CRSP AND MERGE
-# -------------------------------
-# First ensure we have a linking file between gvkey and permno
-link_table = pd.read_csv("__import_files__/crsp_compustat_20250217.csv")
+# ------------------- Script List ----------------------
+scripts = [
+    "supporting_modules/1_data_extraction.py",
+    "supporting_modules/2_data_processing.py",
+    "supporting_modules/3_1_download_fama_french.py",
+    "supporting_modules/3_factor_construction.py",
+    "supporting_modules/4_factor_model.py",
+    "supporting_modules/0_Datanalysis.py",
+    "supporting_modules/5_output_analysis.py"
+]
 
-# Prepare CRSP: need month-end date
-crsp['month_end'] = crsp['date'] + pd.offsets.MonthEnd(0)
+# ------------------- Function to Run Scripts ----------------------
+def run_script(script_path):
+    logging.info(f"🚀 Running: {script_path}")
+    result = subprocess.run(["python", script_path], capture_output=True, text=True)
+    if result.returncode != 0:
+        logging.error(f"❌ Error in {script_path}:\n{result.stderr}")
+        exit(1)  # Stop pipeline on failure
+    else:
+        logging.info(f"✅ Completed: {script_path}")
 
-# Merge Compustat GA quintiles with link table and then CRSP data
-merged = compustat_june.merge(link_table, on='gvkey', how='left')
-merged = merged.merge(crsp, left_on=['permno'], right_on=['permno'], how='left')
+# ------------------- Main Control ----------------------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run full thesis pipeline.")
+    parser.add_argument("--skip-extraction", action='store_true', help="Skip data extraction step.")
+    args = parser.parse_args()
 
-# Keep only relevant CRSP months (after portfolio formation date)
-merged = merged[merged['month_end'] >= merged['june_port_date']]
+    logging.info("🎬 Starting full pipeline for thesis project...")
 
-# -------------------------------
-# 6. VALUE & EQUAL-WEIGHTED RETURNS
-# -------------------------------
-# Define market cap (price * shares outstanding)
-merged['market_cap'] = merged['prc'].abs() * merged['shrout']
+    for script in scripts:
+        if args.skip_extraction and "1_data_extraction.py" in script:
+            logging.info("⏩ Skipping data extraction as requested.")
+            continue
+        run_script(script)
 
-# Monthly returns by GA portfolio
-# First filter months to within 12 months after June formation date
-merged['months_since_formation'] = ((merged['month_end'].dt.year - merged['june_port_date'].dt.year) * 12 + 
-                                    (merged['month_end'].dt.month - merged['june_port_date'].dt.month))
-merged = merged[(merged['months_since_formation'] >= 0) & (merged['months_since_formation'] <= 11)]
-
-# Equal-weighted returns
-ew_returns = merged.groupby(['month_end', 'GA_quintile'])['ret'].mean().reset_index()
-ew_returns = ew_returns.pivot(index='month_end', columns='GA_quintile', values='ret')
-ew_returns.columns = [f'GA_Q{int(col)}_EW' for col in ew_returns.columns]
-
-# Value-weighted returns
-def vw_ret(group):
-    return np.sum(group['ret'] * group['market_cap']) / np.sum(group['market_cap'])
-
-vw_returns = merged.groupby(['month_end', 'GA_quintile']).apply(vw_ret).reset_index()
-vw_returns = vw_returns.pivot(index='month_end', columns='GA_quintile', values=0)
-vw_returns.columns = [f'GA_Q{int(col)}_VW' for col in vw_returns.columns]
-
-# -------------------------------
-# 7. LONG-SHORT (High GA - Low GA)
-# -------------------------------
-# Calculate high-low GA spread
-ew_returns['GA_HML_EW'] = ew_returns[f'GA_Q5_EW'] - ew_returns[f'GA_Q1_EW']
-vw_returns['GA_HML_VW'] = vw_returns[f'GA_Q5_VW'] - vw_returns[f'GA_Q1_VW']
-
-# -------------------------------
-# 8. FINAL OUTPUT
-# -------------------------------
-# Merge EW and VW for final output
-final_returns = ew_returns.merge(vw_returns, on='month_end', how='inner')
-
-# Save to CSV
-final_returns.to_csv('__import_files__/GA_portfolio_returns.csv')
-
-# -------------------------------
-# 9. Quick Check and Summary
-# -------------------------------
-print("\nSample of Final Portfolio Returns (First 5 rows):")
-print(final_returns.head())
-
-print("\nColumns of final output file:")
-print(final_returns.columns.tolist())
-
-print("\nREADY FOR MAIN(2) REGRESSIONS!")
-
+    logging.info("🎉 All pipeline steps completed successfully!")
