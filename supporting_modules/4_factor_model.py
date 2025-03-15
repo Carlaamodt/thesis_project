@@ -112,9 +112,11 @@ def run_factor_models(df, weighting):
 #########################
 
 def main():
-    """Main function to run GA factor regressions and export to Excel."""
+    """Main function to run GA factor regressions, save results, and calculate quintile excess returns."""
+
     final_results = []
 
+    # Run factor models for both equal- and value-weighted GA factor returns
     for weighting in ["equal", "value"]:
         ga_factor, ff_factors = load_data(weighting=weighting)
         df = merge_data(ga_factor, ff_factors)
@@ -122,18 +124,70 @@ def main():
             print(f"❌ Merged dataset empty for {weighting}-weighted!")
             continue
         model_results = run_factor_models(df, weighting)
-        model_results['Weighting'] = weighting  # Add column to distinguish
+        model_results['Weighting'] = weighting  # Add weighting label
         final_results.append(model_results)
 
-    # Combine both equal and value weighted
+    # Combine equal- and value-weighted regression results
     combined_results = pd.concat(final_results, ignore_index=True)
 
-    # Save to Excel
-    output_path = "/Users/carlaamodt/thesis_project/output/ga_factor_regression_results.xlsx"
+    # Save regression results to Excel
+    output_path = "output/ga_factor_regression_results.xlsx"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_results.to_excel(output_path, index=False)
     print(f"\n✅ All regression results saved to {output_path}")
 
+    # ------------------------------------------------------------
+    # Now calculate GA quintile returns as excess returns
+    # ------------------------------------------------------------
+    print("\n💾 Saving GA quintile excess returns (Equal & Value weighted)...")
+
+    # Load risk-free rate data
+    rf = pd.read_csv('data/FamaFrench_factors_with_momentum.csv', parse_dates=['quarter'])
+    rf['year'] = rf['quarter'].dt.year
+    rf_annual = rf.groupby('year')['rf'].mean().reset_index()
+
+    # Load GA factor returns
+    ga_eq = pd.read_csv('data/ga_factor_returns_annual_equal.csv', parse_dates=['year'])
+    ga_val = pd.read_csv('data/ga_factor_returns_annual_value.csv', parse_dates=['year'])
+
+    # Ensure year is int for merge
+    ga_eq['year'] = ga_eq['year'].dt.year if pd.api.types.is_datetime64_any_dtype(ga_eq['year']) else ga_eq['year']
+    ga_val['year'] = ga_val['year'].dt.year if pd.api.types.is_datetime64_any_dtype(ga_val['year']) else ga_val['year']
+    rf_annual['year'] = rf_annual['year'].astype(int)
+
+    # Merge RF to GA factor returns
+    ga_eq = pd.merge(ga_eq, rf_annual, on='year', how='left')
+    ga_val = pd.merge(ga_val, rf_annual, on='year', how='left')
+
+    # Calculate excess returns (quintile return - rf)
+    for q in ['1', '2', '3', '4', '5']:
+        ga_eq[q] = ga_eq[q] - ga_eq['rf']
+        ga_val[q] = ga_val[q] - ga_val['rf']
+
+    # Prepare final table of quintile excess returns
+    quintile_returns_combined = ga_eq[['year', '1', '2', '3', '4', '5']].copy()
+    quintile_returns_combined.columns = ['year', 'Q1_equal', 'Q2_equal', 'Q3_equal', 'Q4_equal', 'Q5_equal']
+
+    value_subset = ga_val[['year', '1', '2', '3', '4', '5']].copy()
+    value_subset.columns = ['year', 'Q1_value', 'Q2_value', 'Q3_value', 'Q4_value', 'Q5_value']
+
+    # Merge Equal & Value returns
+    quintile_returns_final = pd.merge(quintile_returns_combined, value_subset, on='year', how='inner')
+
+    # Save to Excel
+    quintile_returns_path = 'output/ga_quintile_returns_excess.xlsx'
+    quintile_returns_final.to_excel(quintile_returns_path, index=False)
+
+    print(f"✅ Quintile excess returns (Equal & Value weighted) saved to {quintile_returns_path}")
+
+    # ------------------------------------------------------------
+    # Final message
+    # ------------------------------------------------------------
+    print("\n🎉 All regressions and excess returns saved in 'output' folder.")
+
+################################
+### Run Main
+################################
 
 if __name__ == "__main__":
     main()
