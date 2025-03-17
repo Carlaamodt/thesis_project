@@ -2,173 +2,156 @@ import pandas as pd
 import numpy as np
 import os
 
-#########################
-### Load Extracted Data ###
-#########################
+##################################
+### 1. Load Data
+##################################
 
 def load_data(directory="data/"):
-    """Loads extracted Compustat, CRSP, and linking table data."""
-    files = {
-        "compustat": None,
-        "crsp_ret": None,
-        "crsp_delist": None,
-        "crsp_compustat": None
-    }
-    
-    # Identify latest timestamped files
+    files = {"compustat": None, "crsp_ret": None, "crsp_delist": None, "crsp_compustat": None}
     for file in os.listdir(directory):
         for key in files.keys():
             if key in file:
                 files[key] = os.path.join(directory, file)
-
-    # Read data
+    if None in files.values():
+        raise FileNotFoundError(f"Missing files: {', '.join(k for k, v in files.items() if v is None)}")
     print("📥 Loading data...")
     compustat = pd.read_csv(files["compustat"], parse_dates=['date'])
     crsp_ret = pd.read_csv(files["crsp_ret"], parse_dates=['date'])
     crsp_delist = pd.read_csv(files["crsp_delist"], parse_dates=['dlstdt'])
     crsp_compustat = pd.read_csv(files["crsp_compustat"], parse_dates=['linkdt', 'linkenddt'])
-
     return compustat, crsp_ret, crsp_delist, crsp_compustat
 
-#########################
-### Merge Datasets ###
-#########################
+##################################
+### 2. Clean and Merge COMPUSTAT & CRSP
+##################################
 
 def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
-    """Merges Compustat (financials) with CRSP (returns) using GVKEY-PERMNO links."""
-
-    print("🔄 Merging datasets...")
-
-    # Adjust linking dates for valid ranges
+    print("🔄 Merging datasets for 2002–2023...")
+    # Filter link table for strong matches
+    crsp_compustat = crsp_compustat[
+        crsp_compustat['linktype'].isin(['LU', 'LC', 'LN']) &
+        crsp_compustat['linkprim'].isin(['P', 'C'])
+    ].copy()
     crsp_compustat['linkenddt'] = crsp_compustat['linkenddt'].fillna(pd.Timestamp('2023-12-31'))
 
-    # Merge Compustat with CRSP link table
-    merged = pd.merge(compustat, crsp_compustat, on="gvkey", how="left")
+    # Compustat link time check
+    compustat = pd.merge(compustat, crsp_compustat, on='gvkey', how='inner')
+    compustat = compustat[
+        (compustat['date'] >= compustat['linkdt']) & 
+        (compustat['date'] <= compustat['linkenddt'])
+    ].drop_duplicates(subset=['gvkey', 'date']).rename(columns={'date': 'compustat_date'})
 
-    # Keep only valid links (dates within range)
-    merged = merged[(merged['date'] >= merged['linkdt']) & (merged['date'] <= merged['linkenddt'])]
+    # Prepare FF_year
+    compustat['FF_year'] = compustat['compustat_date'].dt.year + 1
+    crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month <= 6, 0, 1)
+    crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
 
-    # Merge with CRSP returns
-    merged = pd.merge(merged, crsp_ret, on=["permno", "date"], how="left")
-
-    # Remove unnecessary columns
-    merged = merged.drop(columns=['linkdt', 'linkenddt', 'linktype', 'linkprim'])
-
-    print(f"✅ Merged dataset shape: {merged.shape}")
+    # Merge on permno + FF_year
+    merged = pd.merge(crsp_ret, compustat, on=['permno', 'FF_year'], how='inner')
+    print(f"✅ Final merged dataset shape: {merged.shape}")
     return merged
 
-#############################
-### Compute Goodwill Intensity ###
-#############################
+##################################
+### 3. Compute GA (Δgdwl/gdwl)
+##################################
 
-def compute_ga_factors(df):
-    """Computes Goodwill Intensity as percentage change in goodwill."""
+def compute_ga(merged):
+    print("📊 Calculating GA (Δgdwl/gdwl) for firms with goodwill...")
 
-    print("📊 Calculating Goodwill Intensity...")
+    # Step 1: Identify firms that ever have goodwill
+    merged['has_goodwill_firm'] = np.where(merged['gdwl'] > 0, 1, 0)
+    goodwill_firms = merged.loc[merged['gdwl'] > 0, 'gvkey'].unique()
+    print(f"💰 Number of unique firms with goodwill: {len(goodwill_firms)}")
 
-    # Sort data by firm and time
-    df = df.sort_values(by=['gvkey', 'date'])
+    # Step 2: Prepare for GA calculation
+    annual_ga = merged[['gvkey', 'compustat_date', 'gdwl']].drop_duplicates().sort_values(['gvkey', 'compustat_date'])
 
-    # Compute percentage change in Goodwill
-    df['gdwl_prev'] = df.groupby('gvkey')['gdwl'].shift(1)  # Previous year's goodwill
-    df['goodwill_intensity'] = (df['gdwl'] - df['gdwl_prev']) / df['gdwl_prev']
+    # Step 3: Lagged goodwill
+    annual_ga['gdwl_lagged'] = annual_ga.groupby('gvkey')['gdwl'].shift(1)
 
-    # Handle edge cases: missing, zero denominator, or infinite values
-    df['goodwill_intensity'] = df['goodwill_intensity'].fillna(0).replace([float('inf'), -float('inf')], 0)
-
-    # Winsorize to avoid extreme outliers (1st & 99th percentile)
-    df['goodwill_intensity'] = df['goodwill_intensity'].clip(
-        df['goodwill_intensity'].quantile(0.01), 
-        df['goodwill_intensity'].quantile(0.99)
+    # Step 4: GA calculation - **Leave as NaN when both current and lagged gdwl are zero**
+    annual_ga['ga'] = np.where(
+        (annual_ga['gdwl_lagged'] != 0) & (annual_ga['gdwl'] != 0),
+        (annual_ga['gdwl'] - annual_ga['gdwl_lagged']) / annual_ga['gdwl_lagged'],
+        np.nan
     )
+    # Optional: Keep lagged GA for future use
+    annual_ga['ga_lagged'] = annual_ga.groupby('gvkey')['ga'].shift(1)
 
-    # Exclude extreme returns
-    df = df[(df['ret'] >= -1) & (df['ret'] <= 1)]  # Exclude returns outside [-100%, 100%]
+    # Step 5: Add FF_year for correct merging
+    annual_ga['FF_year'] = annual_ga['compustat_date'].dt.year + 1
 
-    # Drop rows where goodwill_intensity could not be computed
-    df = df.dropna(subset=['goodwill_intensity'])
+    # Diagnostics
+    print(f"🧹 Rows before dropping NA GA: {annual_ga.shape[0]}")
+    print(f"❌ Rows where GA is NaN: {(annual_ga['ga'].isna()).sum()} (indicating no goodwill activity or both zeros)")
 
-    print(f"✅ Goodwill Intensity computed. Remaining rows: {df.shape[0]}")
-    return df
+    # Step 6: Sample for gvkey 1004
+    sample_1004 = annual_ga[annual_ga['gvkey'] == 1004].head(10)
+    print("\n📊 Sample for gvkey 1004:\n", sample_1004[['gvkey', 'compustat_date', 'gdwl', 'gdwl_lagged', 'ga', 'ga_lagged']])
 
-#############################
-### June Scheme Adjustment ###
-#############################
+    # Step 7: Summary stats for non-NaN GA
+    meaningful_ga = annual_ga.dropna(subset=['ga'])
+    print("\n📊 GA Summary Statistics (non-NaN only):\n", meaningful_ga['ga'].describe())
 
-def apply_june_scheme(df):
-    """Aligns goodwill intensity to July-June portfolio periods."""
-    print("🔁 Applying June Scheme Adjustment for portfolio formation...")
+    # Step 8: Merge GA back to merged dataset
+    merged['FF_year'] = merged['crsp_date'].dt.year + np.where(merged['crsp_date'].dt.month <= 6, 0, 1)
+    merged = pd.merge(merged, annual_ga[['gvkey', 'FF_year', 'ga', 'ga_lagged']], 
+                      on=['gvkey', 'FF_year'], how='left')
 
-    # Fiscal year for info
-    df['fiscal_year'] = df['date'].dt.year
+    # ✅ Final output
+    print("\n✅ GA successfully merged. GA summary in merged data (excluding NaNs):")
+    print(merged['ga'].dropna().describe())
+    print(f"Total rows in merged: {merged.shape[0]}")
+    return merged
 
-    # Lag goodwill intensity for portfolio formation (using last year's data)
-    df['ga_lagged'] = df.groupby('gvkey')['goodwill_intensity'].shift(1)
-
-    # Align to Fama-French July-June year
-    df['FF_year'] = df['date'].dt.year + np.where(df['date'].dt.month <= 6, 0, 1)
-
-    print(f"✅ June Scheme applied. Sample:\n{df[['gvkey', 'date', 'ga_lagged', 'FF_year']].head(5)}")
-    return df
-
-#############################
-### Adjust for Delistings ###
-#############################
+##################################
+### 4. Adjust for Delistings
+##################################
 
 def adjust_for_delistings(df, crsp_delist):
-    """Adjusts stock returns for firms that have been delisted."""
-    
-    print("⚠️ Adjusting for delisting bias...")
-
-    # Merge delisting returns
-    df = pd.merge(df, crsp_delist, on="permno", how="left")
-
-    # If a firm has a delisting return, update the last return
-    df['ret'] = np.where(df['dlret'].notna(), df['dlret'], df['ret'])
-
-    # Drop delisted stocks after last trade date
-    df = df[df['date'] <= df['dlstdt'].fillna(pd.Timestamp('2023-12-31'))]
-
-    print(f"✅ Delisting adjustments done. Rows remaining: {df.shape[0]}")
+    print("⚠️ Adjusting for delisting returns...")
+    df = pd.merge(df, crsp_delist, left_on=['permno', 'crsp_date'], right_on=['permno', 'dlstdt'], how='left')
+    df['ret'] = np.where(df['dlret'].notna(), (1 + df['ret'].fillna(0)) * (1 + df['dlret'].fillna(0)) - 1, df['ret'])
+    df = df[(df['dlstdt'].isna()) | (df['crsp_date'] <= df['dlstdt'])]
+    print(f"✅ Delisting adjustments applied. Rows: {df.shape[0]}")
     return df
 
-#############################
-### Save Processed Data ###
-#############################
+##################################
+### 5. Winsorize Returns (Optional)
+##################################
+
+def winsorize_and_filter(df):
+    print("📊 Winsorizing returns (1%-99%)...")
+    lower, upper = df['ret'].quantile([0.01, 0.99])
+    df['ret'] = df['ret'].clip(lower, upper)
+    df = df[(df['ret'] >= -1) & (df['ret'] <= 1)]
+    print(f"✅ Returns winsorized. Final rows: {df.shape[0]}")
+    return df
+
+##################################
+### 6. Save Final Data
+##################################
 
 def save_processed_data(df, filename="processed_data", directory="data/"):
-    """Saves processed data as a CSV."""
+    print("💾 Saving processed data...")
     os.makedirs(directory, exist_ok=True)
     filepath = os.path.join(directory, f"{filename}.csv")
     df.to_csv(filepath, index=False)
-    print(f"💾 Processed data saved: {filepath}")
+    print(f"✅ Data saved to: {filepath}. Rows: {df.shape[0]}")
+    return df
 
-#############################
-### Main Function ###
-#############################
+##################################
+### Main Pipeline
+##################################
 
 def main():
-    """Main function to process data for factor modeling."""
-    
-    # Load extracted datasets
     compustat, crsp_ret, crsp_delist, crsp_compustat = load_data()
-
-    # Merge datasets
-    merged_data = merge_compustat_crsp(compustat, crsp_ret, crsp_compustat)
-
-    # Compute GA factors
-    processed_data = compute_ga_factors(merged_data)
-
-    # Apply June scheme
-    processed_data = apply_june_scheme(processed_data)
-
-    # Adjust for delisting bias
-    final_data = adjust_for_delistings(processed_data, crsp_delist)
-
-    # Save cleaned dataset
+    merged = merge_compustat_crsp(compustat, crsp_ret, crsp_compustat)
+    ga_computed = compute_ga(merged)
+    delist_adjusted = adjust_for_delistings(ga_computed, crsp_delist)
+    final_data = winsorize_and_filter(delist_adjusted)
     save_processed_data(final_data)
-
-    print("✅ Data processing completed!")
+    print("✅ Pipeline completed!")
 
 if __name__ == "__main__":
     main()
