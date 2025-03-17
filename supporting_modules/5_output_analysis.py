@@ -90,17 +90,26 @@ ff_factors_path = 'data/FamaFrench_factors_with_momentum.csv'
 ff_factors = pd.read_csv(ff_factors_path)
 print("✅ Loaded Fama-French factors. Columns:", ff_factors.columns.tolist())
 
-# Parse FF date (assuming YYYYMM format, e.g., 196307)
-ff_factors['date'] = pd.to_datetime(ff_factors['date'], format='%Y%m', errors='coerce')
-# Normalize to end of month to match GA factor
+# Debug raw FF dates
+print("FF factor raw dates sample:", ff_factors['date'].head().to_list())
+
+# Parse FF date (correcting to YYYY-MM-DD format)
+ff_factors['date'] = pd.to_datetime(ff_factors['date'], format='%Y-%m-%d', errors='coerce')
 ff_factors['date'] = ff_factors['date'] + pd.offsets.MonthEnd(0)
 
 # Load GA factor returns (monthly)
 ga_eq = pd.read_csv('output/factors/ga_factor_returns_monthly_equal.csv', parse_dates=['date'])
 ga_val = pd.read_csv('output/factors/ga_factor_returns_monthly_value.csv', parse_dates=['date'])
 
+# Debug date ranges
+print("GA factor date range:", ga_eq['date'].min(), "to", ga_eq['date'].max())
+print("FF factor date range:", ff_factors['date'].min(), "to", ff_factors['date'].max())
+
 # Merge monthly GA and FF factors
 merged = pd.merge(ga_eq[['date', 'ga_factor']], ff_factors, on='date', how='inner')
+print("Merged rows:", len(merged))
+if merged.empty:
+    print("⚠️ Merge failed—no matching dates between GA and FF factors.")
 
 # Correlation matrix
 ff_cols = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom']
