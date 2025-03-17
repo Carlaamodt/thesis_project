@@ -7,113 +7,80 @@ import seaborn as sns
 import os
 import glob
 
-import pandas as pd
+# Set output directory
+output_dir = "analysis_output"
+os.makedirs(output_dir, exist_ok=True)
 
-import pandas as pd
+########################################
+### 1. Data Analysis of Compustat File #
+########################################
 
-# Load Compustat data (adjust path if needed)
+# Load Compustat data
 compustat = pd.read_csv('data/compustat_20250317.csv', parse_dates=['date'])
 
-# Ensure 'gdwl' and 'gvkey' are numeric (if not already)
+# Ensure columns are numeric
 compustat['gdwl'] = pd.to_numeric(compustat['gdwl'], errors='coerce')
 compustat['gvkey'] = pd.to_numeric(compustat['gvkey'], errors='coerce')
 
-# Total unique firms in Compustat
+# Basic statistics
 total_firms = compustat['gvkey'].nunique()
-
-# Firms that have at least one non-zero goodwill
 firms_with_goodwill = compustat.loc[compustat['gdwl'] > 0, 'gvkey'].nunique()
-
-# Firms that have goodwill reported as NaN (missing)
 firms_with_gdwl_na = compustat.loc[compustat['gdwl'].isna(), 'gvkey'].nunique()
 
-# Print results
+# Output summary
 print(f"🏢 Total unique firms in Compustat: {total_firms}")
 print(f"💰 Firms with at least one non-zero goodwill: {firms_with_goodwill}")
 print(f"❓ Firms with missing goodwill data (NaN): {firms_with_gdwl_na}")
-
-# Optional: Share percentage
 print(f"📊 Percentage of firms with goodwill: {firms_with_goodwill / total_firms:.2%}")
 print(f"📊 Percentage of firms with missing goodwill: {firms_with_gdwl_na / total_firms:.2%}")
 
-
+######################################
+### 2. Analysis of Processed Data ####
+######################################
 
 # Path to processed data
 file_path = 'data/processed_data.csv'
 chunk_size = 500_000
 
 # Initialize counters and storage
-total_rows = 0
-unique_gvkeys = set()
-unique_permnos = set()
-ga_values = []
-returns = []
-years = set()
+total_rows, unique_gvkeys, unique_permnos, ga_values, returns, years = 0, set(), set(), [], [], set()
 
 # Process in chunks
 for i, chunk in enumerate(pd.read_csv(file_path, chunksize=chunk_size)):
     print(f"Processing chunk {i + 1}")
-
     total_rows += len(chunk)
-
     unique_gvkeys.update(chunk['gvkey'].unique())
     unique_permnos.update(chunk['permno'].unique())
-
-    ga_values.extend(chunk['ga'].dropna().tolist())
-    returns.extend(chunk['ret'].dropna().tolist())
-
+    ga_values.extend(chunk['ga'].dropna())
+    returns.extend(chunk['ret'].dropna())
     years.update(pd.to_datetime(chunk['crsp_date']).dt.year.unique())
 
-# Results summary
+# Summary
 print("\n===== SUMMARY =====")
 print(f"Total rows: {total_rows}")
 print(f"Unique gvkeys (firms): {len(unique_gvkeys)}")
 print(f"Unique permnos (stocks): {len(unique_permnos)}")
 print(f"Years covered: {sorted(years)}")
+print("\nGA Summary:\n", pd.Series(ga_values).describe(percentiles=[0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
+print("\nReturn Summary:\n", pd.Series(returns).describe(percentiles=[0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
 
-# Summary statistics for GA
-ga_series = pd.Series(ga_values)
-print("\nGA Summary:")
-print(ga_series.describe(percentiles=[0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
+############################################
+### 3. Load and Analyze Raw Extracted Data #
+############################################
 
-# Summary statistics for Returns
-ret_series = pd.Series(returns)
-print("\nReturn Summary:")
-print(ret_series.describe(percentiles=[0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
-
-######Real analysis#########
-# Set display options
-pd.set_option('display.float_format', lambda x: '%.3f' % x)
-
-# Create output directory
-output_dir = "analysis_output"
-os.makedirs(output_dir, exist_ok=True)
-
-#############################
-### Load Raw Extracted Data ###
-#############################
-
-# Find latest files based on timestamp
+# Helper to get latest file version
 def load_latest_file(pattern):
     files = sorted(glob.glob(pattern))
     return files[-1] if files else None
 
+# Load raw files
 compustat_file = load_latest_file('data/compustat_*.csv')
 crsp_ret_file = load_latest_file('data/crsp_ret_*.csv')
 crsp_delist_file = load_latest_file('data/crsp_delist_*.csv')
 crsp_compustat_file = load_latest_file('data/crsp_compustat_*.csv')
 
-print("🗂️ Loaded Raw Files:")
-print(f"Compustat: {compustat_file}")
-print(f"CRSP Returns: {crsp_ret_file}")
-print(f"CRSP Delist: {crsp_delist_file}")
-print(f"CRSP Compustat Link: {crsp_compustat_file}")
-
-# Load raw data
-compustat_raw = pd.read_csv(compustat_file, parse_dates=['date'])
-crsp_ret_raw = pd.read_csv(crsp_ret_file, parse_dates=['date'])
-crsp_delist_raw = pd.read_csv(crsp_delist_file, parse_dates=['dlstdt'])
-crsp_compustat_raw = pd.read_csv(crsp_compustat_file, parse_dates=['linkdt', 'linkenddt'])
+print("\n🗂️ Loaded Raw Files:")
+print(f"Compustat: {compustat_file}\nCRSP Returns: {crsp_ret_file}\nCRSP Delist: {crsp_delist_file}\nCRSP Compustat Link: {crsp_compustat_file}")
 
 # Quick summary function
 def quick_summary(df, name):
@@ -126,30 +93,33 @@ def quick_summary(df, name):
         print("Date Range (Delisting):", df['dlstdt'].min(), "to", df['dlstdt'].max())
     print("Missing values summary:\n", df.isna().sum())
 
+
+compustat_raw = pd.read_csv(compustat_file, parse_dates=['date'])
+crsp_ret_raw = pd.read_csv(crsp_ret_file, parse_dates=['date'])
+crsp_delist_raw = pd.read_csv(crsp_delist_file, parse_dates=['dlstdt'])
+crsp_compustat_raw = pd.read_csv(crsp_compustat_file, parse_dates=['linkdt', 'linkenddt'])
+
 quick_summary(compustat_raw, "Compustat")
 quick_summary(crsp_ret_raw, "CRSP Returns")
 quick_summary(crsp_delist_raw, "CRSP Delist")
 quick_summary(crsp_compustat_raw, "CRSP-Compustat Link")
 
-########### Load Processed Data ######################
-processed_file = load_latest_file('data/processed_data*.csv')
-df = pd.read_csv(processed_file, parse_dates=['crsp_date'])
-crsp_delist = crsp_delist_raw
-
 ############################################
-### Basic Processed Data Overview ###
+### 4. Processed Data Overview #############
 ############################################
 
+df = pd.read_csv(file_path, parse_dates=['crsp_date'])
 print("\n🎯 Processed Data Overview:")
-print(df['ga'].describe())  # Corrected to GA
+print(df['ga'].describe())
 print("Missing GA:", df['ga'].isna().sum())
 print("Zero GA rows:", (df['ga'] == 0).sum())
 print("Unique companies:", df['gvkey'].nunique())
 
-##################################
-### GA Zero vs. Non-Zero per Year ###
-##################################
+############################################
+### 5. GA and Firm Insights ################
+############################################
 
+# GA Zero vs Non-zero
 ga_zero_nonzero = df.groupby(df['crsp_date'].dt.year).agg(
     total_obs=('ga', 'count'),
     ga_zero=('ga', lambda x: (x == 0).sum()),
@@ -157,90 +127,61 @@ ga_zero_nonzero = df.groupby(df['crsp_date'].dt.year).agg(
 ).reset_index()
 ga_zero_nonzero.to_excel(f"{output_dir}/GA_zero_vs_nonzero_per_year.xlsx", index=False)
 
-##################################
-### GA Percentiles per Year ###
-##################################
-
+# GA Percentiles
 percentiles = df.groupby(df['crsp_date'].dt.year)['ga'].quantile([0, 0.25, 0.5, 0.75, 1]).unstack()
 percentiles.columns = ['P0', 'P25', 'P50', 'P75', 'P100']
 percentiles.to_excel(f"{output_dir}/GA_percentiles_per_year.xlsx", index=True)
 
-##################################
-### Number of Firms Per Month ###
-##################################
-
+# Firms per month
 firms_per_month = df.groupby(df['crsp_date'].dt.to_period('M'))['gvkey'].nunique().reset_index()
 firms_per_month.columns = ['Month', 'Unique Firms']
 firms_per_month.to_excel(f"{output_dir}/firms_per_month.xlsx", index=False)
 
-##################################
-### Median and Mean GA Trend ###
-##################################
+############################################
+### 6. Plots and Distributions #############
+############################################
 
-ga_trend = df.groupby(df['crsp_date'].dt.year).agg(
-    mean_ga=('ga', 'mean'),
-    median_ga=('ga', 'median')
-).reset_index()
+# Mean and median GA over time
+ga_trend = df.groupby(df['crsp_date'].dt.year).agg(mean_ga=('ga', 'mean'), median_ga=('ga', 'median')).reset_index()
 sns.lineplot(data=ga_trend, x='crsp_date', y='mean_ga', label='Mean GA')
 sns.lineplot(data=ga_trend, x='crsp_date', y='median_ga', label='Median GA')
-plt.legend()
-plt.title('Mean and Median GA over time')
-plt.savefig(f"{output_dir}/GA_mean_median_trend.png")
-plt.close()
+plt.legend(); plt.title('Mean and Median GA over time')
+plt.savefig(f"{output_dir}/GA_mean_median_trend.png"); plt.close()
 
-##################################
-### Histograms ###
-##################################
+# Histograms
+sns.histplot(df['ga'], bins=50, kde=True).figure.savefig(f"{output_dir}/ga_distribution.png"); plt.close()
 
-# Goodwill Distribution
-sns.histplot(df['gdwl'], bins=50, kde=True).figure.savefig(f"{output_dir}/goodwill_distribution.png")
-plt.close()
-
-# GA Distribution (consider log-scale if very skewed)
-sns.histplot(df['ga'], bins=50, kde=True).figure.savefig(f"{output_dir}/ga_distribution.png")
-plt.close()
+############################################
+### 7. GA Factor Summary ###################
+############################################
 
 ##################################
 ### GA Factor Return Plots ###
 ##################################
 
-# Load GA factor files — CHECK that 'year' or 'date' exists!
-ga_eq = pd.read_csv('data/ga_factor_returns_annual_equal.csv')
-ga_val = pd.read_csv('data/ga_factor_returns_annual_value.csv')
+# Load GA factor files — NOTE: These are monthly files, not annual!
+ga_eq = pd.read_csv('output/factors/ga_factor_returns_monthly_equal.csv', parse_dates=['date'])
+ga_val = pd.read_csv('output/factors/ga_factor_returns_monthly_value.csv', parse_dates=['date'])
 
-# Plot GA factor (check if 'year' or 'date')
-if 'year' in ga_eq.columns:
-    time_col = 'year'
-else:
-    time_col = 'date'
-
+# Plot GA factor over time
 plt.figure(figsize=(10, 6))
-plt.plot(ga_eq[time_col], ga_eq['GA_factor'], label='Equal-weighted')
-plt.plot(ga_val[time_col], ga_val['GA_factor'], label='Value-weighted')
-plt.title('GA Factor (High - Low) Returns over Time')
+plt.plot(ga_eq['date'], ga_eq['ga_factor'], label='Equal-weighted')
+plt.plot(ga_val['date'], ga_val['ga_factor'], label='Value-weighted')
+plt.axhline(0, color='gray', linestyle='--')
+plt.title('GA Factor (High - Low) Monthly Returns over Time')
+plt.xlabel('Date')
+plt.ylabel('Monthly Return')
 plt.legend()
+plt.tight_layout()
 plt.savefig(f"{output_dir}/GA_factor_comparison.png")
 plt.close()
 
 # Summary stats GA factor
 ga_summary = pd.DataFrame({
-    'Equal Mean GA': [ga_eq['GA_factor'].mean()],
-    'Equal Std GA': [ga_eq['GA_factor'].std()],
-    'Value Mean GA': [ga_val['GA_factor'].mean()],
-    'Value Std GA': [ga_val['GA_factor'].std()]
+    'Equal Mean GA': [ga_eq['ga_factor'].mean()],
+    'Equal Std GA': [ga_eq['ga_factor'].std()],
+    'Value Mean GA': [ga_val['ga_factor'].mean()],
+    'Value Std GA': [ga_val['ga_factor'].std()]
 })
 ga_summary.to_excel(f"{output_dir}/GA_factor_summary.xlsx", index=False)
-
-##################################
-### Delisting Statistics ###
-##################################
-
-merged_delist = pd.merge(df[['permno']].drop_duplicates(), crsp_delist, on='permno', how='left')
-delisting_counts = merged_delist['dlstdt'].dt.year.value_counts().sort_index().reset_index()
-delisting_counts.columns = ['year', 'num_delistings']
-delisting_counts.to_excel(f"{output_dir}/delisting_counts.xlsx", index=False)
-
-##################################
-### Final Message ###
-##################################
-print("🎉 Complete data analysis finished! All outputs in 'analysis_output'.")
+print("✅ GA factor plots and summary saved.")
