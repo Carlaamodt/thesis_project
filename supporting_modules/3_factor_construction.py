@@ -103,7 +103,7 @@ def create_ga_factor(df):
     
     df['ME'] = np.where((df['prc'] > 0) & (df['shrout'] > 0), np.abs(df['prc']) * df['shrout'], np.nan)
     df = df[df['ME'].notna() & (df['ME'] > 0)]
-    
+
     # Equal-weighted
     equal_weighted = df.groupby(['crsp_date', 'decile']).agg(
         ret_mean=('ret', 'mean'),
@@ -111,39 +111,38 @@ def create_ga_factor(df):
     ).unstack()
     min_firms = equal_weighted['num_firms'].min().min()
     if min_firms < 5:
-        sparse_dates = equal_weighted['num_firms'][(equal_weighted['num_firms'][1] < 5) | 
+        sparse_dates = equal_weighted['num_firms'][(equal_weighted['num_firms'][1] < 5) |
                                                   (equal_weighted['num_firms'][10] < 5)].index.tolist()
         logger.warning(f"Months with <5 firms in D1 or D10: {len(sparse_dates)} dates - {sparse_dates[:5]}...")
     equal_weighted['ga_factor'] = equal_weighted['ret_mean'][10] - equal_weighted['ret_mean'][1]
     equal_weighted = equal_weighted[['ga_factor']].dropna()
     logger.info("✅ Equal-weighted GA factor sample:\n%s", equal_weighted.head())
-    
+
     # Value-weighted
     def weighted_ret(x):
         if len(x) < 5 or x['ME'].sum() <= 0:
             return np.nan
         return np.average(x['ret'], weights=x['ME'])
-    
+
     value_weighted = df.groupby(['crsp_date', 'decile'])[['ret', 'ME']].apply(weighted_ret, include_groups=False).unstack()
     value_weighted['ga_factor'] = value_weighted[10] - value_weighted[1]
     value_weighted = value_weighted[['ga_factor']].dropna()
     logger.info("✅ Value-weighted GA factor sample:\n%s", value_weighted.head())
 
-    # ✅ Ensure 'crsp_date' is a column (not index) and properly named for step 4
+    # ✅ Reset index to move 'crsp_date' back as a column and rename to 'date'
     equal_weighted.reset_index(inplace=True)
     value_weighted.reset_index(inplace=True)
-
     equal_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
     value_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
 
     # ✅ Create output directory if not exists
     os.makedirs('output/factors', exist_ok=True)
 
-    # ✅ Save to CSV without index
+    # ✅ Save CSVs cleanly without index and with 'date' as column
     equal_weighted.to_csv('output/factors/ga_factor_returns_monthly_equal.csv', index=False)
     value_weighted.to_csv('output/factors/ga_factor_returns_monthly_value.csv', index=False)
 
-    # ✅ Log statistics for transparency and diagnostics
+    # ✅ Log descriptive stats and warnings
     for name, factor in [("Equal-weighted", equal_weighted), ("Value-weighted", value_weighted)]:
         stats = factor['ga_factor'].describe()
         annualized_mean = stats['mean'] * 12
@@ -154,6 +153,13 @@ def create_ga_factor(df):
             logger.warning(f"{name} factor might be unreliable: {stats}")
 
     logger.info("✅ GA factor returns saved to 'output/factors/' with 'date' column included.")
+
+    # ✅ Export decile assignments including ME for File 5
+    logger.info("✅ Exporting decile assignments including ME for analysis...")
+    df[['permno', 'crsp_date', 'FF_year', 'decile', 'ga_lagged', 'has_goodwill_firm', 'ME']].to_csv(
+        'analysis_output/decile_assignments.csv', index=False
+    )
+
     return equal_weighted, value_weighted
 
 def main():
