@@ -41,13 +41,23 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
         (compustat['date'] <= compustat['linkenddt'])
     ].drop_duplicates(subset=['gvkey', 'date']).rename(columns={'date': 'compustat_date'})
 
-    # Prepare FF_year
+    # FF_year: Compustat uses prior fiscal year-end for July t to June t+1
     compustat['FF_year'] = compustat['compustat_date'].dt.year + 1
-    crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month <= 6, 0, 1)
+
+    # FF_year: CRSP assigns portfolio year (July t to June t+1)
+    crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
 
+    # Check for duplicates in crsp_ret
+    crsp_ret_duplicates = crsp_ret.duplicated(subset=['permno', 'crsp_date']).sum()
+    print(f"CRSP duplicates: {crsp_ret_duplicates}")
+    if crsp_ret_duplicates > 0:
+        crsp_ret = crsp_ret.drop_duplicates(subset=['permno', 'crsp_date'])
+
     # Merge on permno + FF_year
+    pre_merge_rows = len(crsp_ret) + len(compustat)
     merged = pd.merge(crsp_ret, compustat, on=['permno', 'FF_year'], how='inner')
+    print(f"Rows lost in merge: {pre_merge_rows - len(merged)} (CRSP: {len(crsp_ret)}, Compustat: {len(compustat)}, Merged: {len(merged)})")
     print(f"✅ Final merged dataset shape: {merged.shape}")
     return merged
 
@@ -94,7 +104,6 @@ def compute_ga(merged):
     print("\n📊 GA Summary Statistics (non-NaN only):\n", meaningful_ga['ga'].describe())
 
     # Step 8: Merge GA back to merged dataset
-    merged['FF_year'] = merged['crsp_date'].dt.year + np.where(merged['crsp_date'].dt.month <= 6, 0, 1)
     merged = pd.merge(merged, annual_ga[['gvkey', 'FF_year', 'ga', 'ga_lagged']], 
                       on=['gvkey', 'FF_year'], how='left')
 
@@ -110,7 +119,9 @@ def compute_ga(merged):
 
 def adjust_for_delistings(df, crsp_delist):
     print("⚠️ Adjusting for delisting returns...")
-    df = pd.merge(df, crsp_delist, left_on=['permno', 'crsp_date'], right_on=['permno', 'dlstdt'], how='left')
+    df['crsp_date_month'] = df['crsp_date'].dt.to_period('M')
+    crsp_delist['dlstdt_month'] = crsp_delist['dlstdt'].dt.to_period('M')
+    df = pd.merge(df, crsp_delist, left_on=['permno', 'crsp_date_month'], right_on=['permno', 'dlstdt_month'], how='left')
     df['ret'] = np.where(df['dlret'].notna(), (1 + df['ret'].fillna(0)) * (1 + df['dlret'].fillna(0)) - 1, df['ret'])
     df = df[(df['dlstdt'].isna()) | (df['crsp_date'] <= df['dlstdt'])]
     print(f"✅ Delisting adjustments applied. Rows: {df.shape[0]}")
@@ -124,7 +135,16 @@ def winsorize_and_filter(df):
     print("📊 Winsorizing returns (1%-99%)...")
     lower, upper = df['ret'].quantile([0.01, 0.99])
     df['ret'] = df['ret'].clip(lower, upper)
-    df = df[(df['ret'] >= -1) & (df['ret'] <= 1)]
+    pre_filter_rows = len(df)
+    df_filtered = df[(df['ret'] >= -1) & (df['ret'] <= 1)]
+    rows_dropped = pre_filter_rows - len(df_filtered)
+    print(f"Rows before [-1, 1] filter: {pre_filter_rows}, after: {len(df_filtered)}")
+    print(f"Rows dropped: {rows_dropped}")
+    if rows_dropped < 1000:
+        print("[-1, 1] filter likely redundant, skipping...")
+    else:
+        print("Applying [-1, 1] filter...")
+        df = df_filtered
     print(f"✅ Returns winsorized. Final rows: {df.shape[0]}")
     return df
 
@@ -145,13 +165,17 @@ def save_processed_data(df, filename="processed_data", directory="data/"):
 ##################################
 
 def main():
-    compustat, crsp_ret, crsp_delist, crsp_compustat = load_data()
-    merged = merge_compustat_crsp(compustat, crsp_ret, crsp_compustat)
-    ga_computed = compute_ga(merged)
-    delist_adjusted = adjust_for_delistings(ga_computed, crsp_delist)
-    final_data = winsorize_and_filter(delist_adjusted)
-    save_processed_data(final_data)
-    print("✅ Pipeline completed!")
+    try:
+        compustat, crsp_ret, crsp_delist, crsp_compustat = load_data()
+        merged = merge_compustat_crsp(compustat, crsp_ret, crsp_compustat)
+        ga_computed = compute_ga(merged)
+        delist_adjusted = adjust_for_delistings(ga_computed, crsp_delist)
+        final_data = winsorize_and_filter(delist_adjusted)
+        save_processed_data(final_data)
+        print("✅ Pipeline completed!")
+    except Exception as e:
+        print(f"❌ Pipeline failed: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
