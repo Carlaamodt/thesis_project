@@ -7,10 +7,10 @@ import os
 ### Load Factor Data ###
 #########################
 
-def load_data(weighting="equal"):
+def load_data(weighting="equal", ga_choice="GA1_lagged"):
     """Loads monthly GA factor returns and Fama-French factors."""
-    print(f"📥 Loading monthly {weighting}-weighted GA factor returns...")
-    ga_factor_path = f"output/factors/ga_factor_returns_monthly_{weighting}.csv"
+    print(f"📥 Loading monthly {weighting}-weighted {ga_choice} factor returns...")
+    ga_factor_path = f"output/factors/ga_factor_returns_monthly_{weighting}_{ga_choice}.csv"
     if not os.path.exists(ga_factor_path):
         print(f"❌ Error: GA factor return file not found at {ga_factor_path}")
         return None, None
@@ -23,13 +23,11 @@ def load_data(weighting="equal"):
         print(f"❌ Error: Fama-French file not found at {ff_factors_path}")
         return None, None
 
+    ff_factors = pd.read_csv(ff_factors_path, parse_dates=['date'])
+    
     # Ensure lowercase for consistency
     ga_factor.columns = ga_factor.columns.str.lower()
-    ff_factors = pd.read_csv(ff_factors_path, parse_dates=['date'])
     ff_factors.columns = ff_factors.columns.str.lower()
-
-    # Rename for alignment
-    ga_factor.rename(columns={"crsp_date": "date"}, inplace=True)
 
     # Check and display date ranges
     print("✅ GA factor date range:", ga_factor['date'].min(), "to", ga_factor['date'].max())
@@ -37,7 +35,7 @@ def load_data(weighting="equal"):
 
     # Align Fama-French dataset to start no earlier than GA factor
     start_date = ga_factor['date'].min()
-    ff_factors = ff_factors[ff_factors['date'] >= start_date]
+    ff_factors = ff_factors[ff_factors['date'] >= start_date.replace(day=1)]  # Align to month start
 
     # Check required columns
     required_factors = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom', 'rf']
@@ -49,7 +47,6 @@ def load_data(weighting="equal"):
     print("✅ Fama-French dataset filtered. Period:", ff_factors['date'].min(), "to", ff_factors['date'].max())
     return ga_factor, ff_factors
 
-
 #############################
 ### Merge and Prepare Data ###
 #############################
@@ -57,9 +54,8 @@ def load_data(weighting="equal"):
 def merge_data(ga_factor, ff_factors):
     """Merges GA factor data with Fama-French factors on date."""
     print("🔄 Merging GA factor with Fama-French factors...")
-
-    # Align both to month-end for consistency
-    ga_factor['date'] = ga_factor['date'] + pd.offsets.MonthEnd(0)
+    
+    # Adjust FF dates to month-end to match GA factors
     ff_factors['date'] = ff_factors['date'] + pd.offsets.MonthEnd(0)
 
     # Merge on date
@@ -70,14 +66,13 @@ def merge_data(ga_factor, ff_factors):
     print(f"✅ Merged dataset: {merged_df.shape[0]} months, from {merged_df['date'].min()} to {merged_df['date'].max()}")
     return merged_df
 
-
 #########################
 ### Run Factor Models ###
 #########################
 
-def run_factor_models(df, weighting):
+def run_factor_models(df, weighting, ga_choice):
     """Runs factor regressions for GA factor returns with Newey-West robust standard errors and annualized alpha."""
-    print(f"📊 Running factor regressions for {weighting}-weighted GA factor...")
+    print(f"📊 Running factor regressions for {weighting}-weighted {ga_choice} factor...")
 
     # Check necessary columns
     if 'ga_factor' not in df.columns or 'rf' not in df.columns:
@@ -125,6 +120,7 @@ def run_factor_models(df, weighting):
         res = {
             'Model': model_name,
             'Weighting': weighting,
+            'GA Choice': ga_choice,
             'Alpha (const)': alpha_monthly,
             'Alpha (annualized)': alpha_annualized,
             'Alpha p-value (HAC)': model.pvalues.get('const', np.nan),
@@ -143,7 +139,7 @@ def run_factor_models(df, weighting):
         all_results.append(res)
 
         # Print model summary for review
-        print(f"\n📊 {model_name} Regression Results ({weighting}-weighted) with Newey-West HAC SE:\n")
+        print(f"\n📊 {model_name} Regression Results ({weighting}-weighted {ga_choice}) with Newey-West HAC SE:\n")
         print(model.summary())
 
     return pd.DataFrame(all_results)
@@ -157,22 +153,23 @@ def main():
     final_results = []
 
     for weighting in ["equal", "value"]:
-        # Load data
-        ga_factor, ff_factors = load_data(weighting=weighting)
-        if ga_factor is None or ff_factors is None:
-            print(f"❌ Data loading failed for {weighting}-weighted GA factor.")
-            continue
+        for ga_choice in ["GA1_lagged", "GA2_lagged", "GA3_lagged"]:
+            # Load data
+            ga_factor, ff_factors = load_data(weighting=weighting, ga_choice=ga_choice)
+            if ga_factor is None or ff_factors is None:
+                print(f"❌ Data loading failed for {weighting}-weighted {ga_choice} factor.")
+                continue
 
-        # Merge datasets
-        df = merge_data(ga_factor, ff_factors)
-        if df.empty:
-            print(f"❌ Merged dataset empty for {weighting}-weighted.")
-            continue
+            # Merge datasets
+            df = merge_data(ga_factor, ff_factors)
+            if len(df) == 0:
+                print(f"❌ Merged dataset empty for {weighting}-weighted {ga_choice}.")
+                continue
 
-        # Run regressions
-        model_results = run_factor_models(df, weighting)
-        if model_results is not None:
-            final_results.append(model_results)
+            # Run regressions
+            model_results = run_factor_models(df, weighting, ga_choice)
+            if model_results is not None:
+                final_results.append(model_results)
 
     # Save results
     if not final_results:
@@ -185,9 +182,8 @@ def main():
     combined_results.to_excel(output_path, index=False)
     print(f"\n✅ All monthly regression results saved to {output_path}")
 
-
 ################################
-### Run Main
+### Run Main ###
 ################################
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import pandas as pd
 import wrds
+import os
 
 ############################
 ### Connect to WRDS ###
@@ -60,6 +61,8 @@ print(ff_factors.isnull().sum())
 print(f"\n🗓️ Final date range: {ff_factors['date'].min()} to {ff_factors['date'].max()}")
 
 # Save cleaned file
-output_path = "data/FamaFrench_factors_with_momentum.csv"
+output_dir = "data"
+os.makedirs(output_dir, exist_ok=True)
+output_path = os.path.join(output_dir, "FamaFrench_factors_with_momentum.csv")
 ff_factors.to_csv(output_path, index=False)
-print(f"\n💾 Fama-French factors (including Momentum) saved successfully to: {output_path}")
+print(f"\n💾 Saved to: {output_path}")
