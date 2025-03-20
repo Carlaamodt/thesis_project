@@ -149,8 +149,8 @@ def run_factor_models(df, weighting, ga_choice):
 #########################
 
 def main():
-    """Main function to perform regression analysis and save results."""
-    final_results = []
+    """Main function to perform regression analysis and save results to multi-sheet Excel."""
+    results_by_ga = {"GA1": None, "GA2": None, "GA3": None}  # Store results for each GA
 
     for weighting in ["equal", "value"]:
         for ga_choice in ["GA1_lagged", "GA2_lagged", "GA3_lagged"]:
@@ -158,7 +158,7 @@ def main():
             ga_factor, ff_factors = load_data(weighting=weighting, ga_choice=ga_choice)
             if ga_factor is None or ff_factors is None:
                 print(f"❌ Data loading failed for {weighting}-weighted {ga_choice} factor.")
-                continue
+                continue  # Skip to next GA if file missing
 
             # Merge datasets
             df = merge_data(ga_factor, ff_factors)
@@ -169,18 +169,26 @@ def main():
             # Run regressions
             model_results = run_factor_models(df, weighting, ga_choice)
             if model_results is not None:
-                final_results.append(model_results)
+                # Assign to corresponding GA sheet (strip '_lagged' for sheet name)
+                ga_key = ga_choice.replace("_lagged", "")
+                if results_by_ga[ga_key] is None:
+                    results_by_ga[ga_key] = model_results
+                else:
+                    results_by_ga[ga_key] = pd.concat([results_by_ga[ga_key], model_results], ignore_index=True)
 
-    # Save results
-    if not final_results:
-        print("❌ No valid regression results to save.")
-        return
-
-    combined_results = pd.concat(final_results, ignore_index=True)
+    # Save results to multi-sheet Excel
     output_path = "output/ga_factor_regression_results_monthly.xlsx"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    combined_results.to_excel(output_path, index=False)
-    print(f"\n✅ All monthly regression results saved to {output_path}")
+    
+    with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+        for ga_key, results in results_by_ga.items():
+            if results is not None:
+                results.to_excel(writer, sheet_name=ga_key, index=False)
+            else:
+                # Write empty sheet if no results
+                pd.DataFrame().to_excel(writer, sheet_name=ga_key, index=False)
+    
+    print(f"\n✅ All monthly regression results saved to {output_path} with sheets GA1, GA2, GA3")
 
 ################################
 ### Run Main ###

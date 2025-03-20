@@ -138,17 +138,8 @@ def create_ga_factor(df, ga_column):
         logger.warning(f"Months with <5 firms in D1 or D10: {len(sparse_dates)} dates - {sparse_dates[:5]}...")
     equal_weighted['ga_factor'] = equal_weighted['ret_mean'][10] - equal_weighted['ret_mean'][1]
     equal_weighted = equal_weighted[['ga_factor']].dropna()
-    # Reset index and rename
     equal_weighted.reset_index(inplace=True)
     equal_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
-
-    # Double-check no NaNs remain
-    if equal_weighted['ga_factor'].isna().any():
-        logger.warning("NaNs found in ga_factor before saving!")
-        equal_weighted = equal_weighted.dropna(subset=['ga_factor'])
-
-    os.makedirs('output/factors', exist_ok=True)
-    equal_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_equal_{ga_column}.csv', index=False)
 
     def weighted_ret(x):
         if len(x) < 5 or x['ME'].sum() <= 0:
@@ -158,10 +149,7 @@ def create_ga_factor(df, ga_column):
     value_weighted = df.groupby(['crsp_date', 'decile'])[['ret', 'ME']].apply(weighted_ret, include_groups=False).unstack()
     value_weighted['ga_factor'] = value_weighted[10] - value_weighted[1]
     value_weighted = value_weighted[['ga_factor']].dropna()
-
-    equal_weighted.reset_index(inplace=True)
     value_weighted.reset_index(inplace=True)
-    equal_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
     value_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
 
     os.makedirs('output/factors', exist_ok=True)
@@ -195,6 +183,7 @@ def main(ga_choice="GA1_lagged"):
         df = assign_ga_deciles(df, ga_column=ga_choice)
         equal_weighted, value_weighted = create_ga_factor(df, ga_column=ga_choice)
         logger.info(f"Final dataset shape: {df.shape}")
+        return equal_weighted, value_weighted
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         raise
