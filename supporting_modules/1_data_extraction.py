@@ -15,13 +15,14 @@ compustat = conn.raw_sql("""
                     select gvkey, datadate AS date, pstkl, pstkrv, pstk, fyear, 
                     at, lt, ceq, seq, mib, revt, cogs, xsga, xint, dp, ebit, 
                     txditc, txdb, itcb, txdi, csho, act, lct, che, dlc,
-                    txc, xido, ib, pi, wcap, gdwl, GDWLIP
+                    txc, xido, ib, pi, wcap, gdwl, GDWLIP, naicsh, sich
                     from comp.funda
                     where indfmt = 'INDL'
                     and datafmt = 'STD'
                     and popsrc = 'D'
                     and consol = 'C'
                     and datadate >= '01/01/2002'
+                    and datadate < '01/01/2024'
                     order by gvkey, fyear, datadate
                     """, date_cols = ['datadate'])
                     
@@ -63,6 +64,8 @@ pi:       Pre-tax Income
 wcap:     Working Capital
 gdwl:     Goodwill
 GDWLIP:   Goodwill and Impairment
+naicsh:   North American Industry Classification System
+sich:     Standard Industrial Classification Code
 
 Sourcing criteria:
 indfmt: Format of company reports (Industrial, INDL, or Financial Services, FS)
@@ -90,6 +93,7 @@ crsp_ret = conn.raw_sql("""
                             and b.namedt <= a.date
                             and a.date <= b.nameendt
                             where a.date >= '01/01/2002'
+                            and a.date < '01/01/2024'
                             and b.exchcd in (1, 2, 3)
                             """, date_cols = ['date']) 
 
@@ -128,6 +132,8 @@ nameendt: Names Ending Date
 crsp_delist = conn.raw_sql("""
                           select permno, dlret, dlstdt, dlstcd
                           from crsp.msedelist
+                           where dlstdt < '01/01/2024' -- ✅ EXCLUDE delistings dated 2024+
+
                           """, date_cols = ['dlstdt'])
 
 """
