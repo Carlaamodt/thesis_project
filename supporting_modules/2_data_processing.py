@@ -45,11 +45,15 @@ def load_data(directory="data/"):
 
 def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     print("🔄 Merging datasets for 2002–2023...")
+    # Filter link table and handle multiple permno per gvkey
     crsp_compustat = crsp_compustat[
         crsp_compustat['linktype'].isin(['LU', 'LC', 'LN']) &
         crsp_compustat['linkprim'].isin(['P', 'C'])
     ].copy()
     crsp_compustat['linkenddt'] = crsp_compustat['linkenddt'].fillna(pd.Timestamp('2023-12-31'))
+    # Keep most recent permno per gvkey
+    crsp_compustat = crsp_compustat.sort_values(['gvkey', 'linkdt']).groupby('gvkey').tail(1)
+    
     compustat = pd.merge(compustat, crsp_compustat, on='gvkey', how='inner')
     date_col = 'date' if 'date' in compustat.columns else 'datadate'
     compustat = compustat[
@@ -70,37 +74,51 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
 
 def apply_filters(df):
     print("📊 Applying filtering rules...")
+    # Exchange filter
     df = df[df['exchcd'].isin([1, 2, 3])]
     print(f"After exchange filter: {df.shape[0]} rows")
+    
+    # Minimum observations filter
     df = df.groupby('permno').filter(lambda x: len(x) >= 12)
     print(f"After min obs filter: {df.shape[0]} rows")
 
-    # After merging Compustat and CRSP data
+    # Positive assets and non-missing goodwill (already in code)
     df = df[(df['at'] > 0) & (df['gdwl'].notna())]
+    # Add positive equity filter
+    df = df[df['ceq'] > 0]
+    print(f"After positive assets, goodwill, and equity filter: {df.shape[0]} rows")
     
-    # Fix: Reset index to align with df
+    # Zero return streak filter
     df['zero_streak'] = df.groupby('permno')['ret'].apply(
         lambda x: (x == 0).astype(int).groupby((x != 0).cumsum()).cumsum()
     ).reset_index(drop=True)
     df = df[df['zero_streak'] < 6]
     print(f"After zero return filter: {df.shape[0]} rows")
     
+    # Backfill prc before computing ME
+    df['prc'] = df.groupby('permno')['prc'].ffill()
     df['ME'] = df['shrout'] * df['prc'].abs()
+    # Filter for non-missing ME
+    df = df[df['ME'].notna()]
+    print(f"After non-missing ME filter: {df.shape[0]} rows")
+    
+    # Size filter (ME > 5th percentile)
     df['ME_roll'] = df.groupby('permno')['ME'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
     df['ME_percentile'] = df.groupby('crsp_date')['ME_roll'].rank(pct=True)
     df = df[df['ME_percentile'] > 0.05]
     print(f"After ME filter: {df.shape[0]} rows")
     
+    # Penny stock filter
     df['avg_price'] = df.groupby('permno')['prc'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
     df = df[df['avg_price'].abs() >= 1]
     print(f"After penny stock filter: {df.shape[0]} rows")
     
+    # Volume filter
     df['avg_vol'] = df.groupby('permno')['vol'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
     df = df[df['vol'] >= 0.05 * df['avg_vol']]
     print(f"After volume filter: {df.shape[0]} rows")
     
-    df['ret'] = df['ret'].where(df['ret'].abs() <= 10, np.nan)
-    print(f"After extreme return filter: {df.shape[0]} rows (NaNs set, not dropped yet)")
+    # Removed extreme return filter (|ret| <= 10) - handled in Code 3
     print(f"✅ Filtering completed. Final shape: {df.shape}")
     return df
 

@@ -21,7 +21,10 @@ def load_processed_data(directory="data/", filename="processed_data.csv", ga_cho
     try:
         df = pd.read_csv(filepath, parse_dates=['crsp_date'], usecols=required_cols, low_memory=False)
         df = df.drop_duplicates(subset=['permno', 'crsp_date'])
+        # Filter out 2024
+        df = df[df['crsp_date'].dt.year < 2024]
         logger.info(f"Loaded rows: {len(df)}, unique permno: {df['permno'].nunique()}")
+        logger.info(f"Years present: {sorted(df['crsp_date'].dt.year.unique())}")
         if len(df) < 100000:
             logger.warning(f"Low row count: {len(df)}")
         return df
@@ -66,6 +69,8 @@ def ga_lagged_diagnostics(df, ga_column):
 
 def count_firms_per_year(df, ga_column):
     logger.info("Counting firms per FF_year...")
+    # Filter out 2024
+    df = df[df['FF_year'] < 2024].copy()
     firm_counts = df[df[ga_column].notna()].groupby('FF_year').agg(
         num_firms=('permno', 'nunique'),
         num_unique_ga=(ga_column, 'nunique'),
@@ -85,20 +90,29 @@ def count_firms_per_year(df, ga_column):
 
 def assign_ga_deciles(df, ga_column):
     logger.info(f"Assigning {ga_column} deciles...")
-    df['decile'] = 0
+    # Filter out 2024
+    df = df[df['FF_year'] < 2024].copy()
+    df['decile'] = 0  # Initialize as int
     decile_assignments = []
     for year, group in df.groupby('FF_year'):
         goodwill_firms = group[group[ga_column].notna()].copy()
-        valid_ga = goodwill_firms[goodwill_firms[ga_column] != 0].copy()
-        logger.info(f"Year {year}: Goodwill firms = {len(goodwill_firms)}, Valid GA = {len(valid_ga)}")
-        if len(valid_ga) >= 20 and valid_ga[ga_column].nunique() > 5:
+        logger.info(f"Year {year}: Goodwill firms = {len(goodwill_firms)}")
+        if len(goodwill_firms) >= 20 and goodwill_firms[ga_column].nunique() > 5:
             try:
-                valid_ga.loc[:, 'decile'] = pd.qcut(valid_ga[ga_column], 10, labels=False, duplicates='drop') + 1
-                decile_assignments.append(valid_ga[['permno', 'crsp_date', 'decile']])
+                # Step 1: Assign Decile 1 to zero or negative goodwill firms
+                goodwill_firms['decile'] = np.where(goodwill_firms[ga_column] <= 0, 1, 0)
+                # Step 2: Filter positive firms
+                positive = goodwill_firms[goodwill_firms[ga_column] > 0].copy()
+                # Step 3: Assign Deciles 2-10 to positive firms
+                if len(positive) >= 18:  # Need at least 2 firms per decile for 9 deciles
+                    positive['decile'] = pd.qcut(positive[ga_column], 9, labels=False, duplicates='drop') + 2
+                    positive['decile'] = positive['decile'].astype(int)
+                    goodwill_firms.loc[positive.index, 'decile'] = positive['decile']
+                decile_assignments.append(goodwill_firms[['permno', 'crsp_date', 'decile']])
             except ValueError as e:
                 logger.warning(f"Year {year}: Decile failed - {e}")
         else:
-            logger.warning(f"Year {year}: Insufficient data (firms: {len(valid_ga)}, unique GA: {valid_ga[ga_column].nunique()})")
+            logger.warning(f"Year {year}: Insufficient data (firms: {len(goodwill_firms)}, unique GA: {goodwill_firms[ga_column].nunique()})")
     if not decile_assignments:
         logger.error("No decile assignments!")
         raise ValueError("Decile assignment failed.")
@@ -119,7 +133,8 @@ def assign_ga_deciles(df, ga_column):
 def create_ga_factor(df, ga_column):
     logger.info(f"Creating {ga_column} factor returns...")
     df['crsp_date'] = pd.to_datetime(df['crsp_date']) + pd.offsets.MonthEnd(0)
-    df = df[df['decile'].isin([1, 10]) & df['ret'].notna() & (df['ret'].abs() <= 5)].copy()
+    # Relax return cap to |ret| <= 10
+    df = df[df['decile'].isin([1, 10]) & df['ret'].notna() & (df['ret'].abs() <= 10)].copy()
     if len(df) < 100:
         logger.error(f"Too few rows for factor: {len(df)}")
         raise ValueError("Insufficient data.")
@@ -127,35 +142,42 @@ def create_ga_factor(df, ga_column):
     df['ME'] = np.where((df['prc'] > 0) & (df['csho'] > 0), np.abs(df['prc']) * df['csho'], np.nan)
     df = df[df['ME'].notna() & (df['ME'] > 0)]
 
+    # Equal-weighted portfolio
     equal_weighted = df.groupby(['crsp_date', 'decile']).agg(
         ret_mean=('ret', 'mean'),
         num_firms=('permno', 'count')
     ).unstack()
+    # Increase min firms to 10
     min_firms = equal_weighted['num_firms'].min().min()
-    if min_firms < 5:
-        sparse_dates = equal_weighted['num_firms'][(equal_weighted['num_firms'][1] < 5) |
-                                                  (equal_weighted['num_firms'][10] < 5)].index.tolist()
-        logger.warning(f"Months with <5 firms in D1 or D10: {len(sparse_dates)} dates - {sparse_dates[:5]}...")
-    equal_weighted['ga_factor'] = equal_weighted['ret_mean'][10] - equal_weighted['ret_mean'][1]
+    if min_firms < 10:
+        sparse_dates = equal_weighted['num_firms'][(equal_weighted['num_firms'][1] < 10) |
+                                                  (equal_weighted['num_firms'][10] < 10)].index.tolist()
+        logger.warning(f"Months with <10 firms in D1 or D10: {len(sparse_dates)} dates - {sparse_dates[:5]}...")
+    # Reverse hedge: Long Decile 1 (low GA), short Decile 10 (high GA)
+    equal_weighted['ga_factor'] = equal_weighted['ret_mean'][1] - equal_weighted['ret_mean'][10]
     equal_weighted = equal_weighted[['ga_factor']].dropna()
     equal_weighted.reset_index(inplace=True)
     equal_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
 
+    # Value-weighted portfolio
     def weighted_ret(x):
-        if len(x) < 5 or x['ME'].sum() <= 0:
+        if len(x) < 10 or x['ME'].sum() <= 0:  # Increase min firms to 10
             return np.nan
         return np.average(x['ret'], weights=x['ME'])
 
     value_weighted = df.groupby(['crsp_date', 'decile'])[['ret', 'ME']].apply(weighted_ret, include_groups=False).unstack()
-    value_weighted['ga_factor'] = value_weighted[10] - value_weighted[1]
+    # Reverse hedge
+    value_weighted['ga_factor'] = value_weighted[1] - value_weighted[10]
     value_weighted = value_weighted[['ga_factor']].dropna()
     value_weighted.reset_index(inplace=True)
     value_weighted.rename(columns={'crsp_date': 'date'}, inplace=True)
 
+    # Save results
     os.makedirs('output/factors', exist_ok=True)
     equal_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_equal_{ga_column}.csv', index=False)
     value_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_value_{ga_column}.csv', index=False)
 
+    # Factor statistics
     for name, factor in [("Equal-weighted", equal_weighted), ("Value-weighted", value_weighted)]:
         stats = factor['ga_factor'].describe()
         annualized_mean = stats['mean'] * 12
@@ -175,18 +197,21 @@ def create_ga_factor(df, ga_column):
 ### Main Pipeline
 ##################################
 
-def main(ga_choice="GA1_lagged"):
+def main():
     try:
-        df = load_processed_data(ga_choice=ga_choice)
-        ga_lagged_diagnostics(df, ga_column=ga_choice)
-        count_firms_per_year(df, ga_column=ga_choice)
-        df = assign_ga_deciles(df, ga_column=ga_choice)
-        equal_weighted, value_weighted = create_ga_factor(df, ga_column=ga_choice)
-        logger.info(f"Final dataset shape: {df.shape}")
-        return equal_weighted, value_weighted
+        # Loop over GA1, GA2, GA3
+        for ga_choice in ["GA1_lagged", "GA2_lagged", "GA3_lagged"]:
+            print(f"\n🔄 Processing {ga_choice}...")
+            df = load_processed_data(ga_choice=ga_choice)
+            ga_lagged_diagnostics(df, ga_column=ga_choice)
+            count_firms_per_year(df, ga_column=ga_choice)
+            df = assign_ga_deciles(df, ga_column=ga_choice)
+            equal_weighted, value_weighted = create_ga_factor(df, ga_column=ga_choice)
+            logger.info(f"Final dataset shape for {ga_choice}: {df.shape}")
+        print("\n✅ All GA factors processed successfully!")
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         raise
 
 if __name__ == "__main__":
-    main(ga_choice="GA1_lagged")  # Swap to "GA2_lagged" or "GA3_lagged" here
+    main()
