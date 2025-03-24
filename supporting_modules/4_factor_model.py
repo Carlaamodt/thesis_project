@@ -60,6 +60,8 @@ def merge_data(ga_factor, ff_factors):
 
     # Merge on date
     merged_df = pd.merge(ga_factor, ff_factors, on="date", how="inner")
+    merged_df['rf'] = merged_df['rf'] / 100
+
 
     # Drop 2024 and beyond if any
     merged_df = merged_df[merged_df['date'].dt.year < 2024]

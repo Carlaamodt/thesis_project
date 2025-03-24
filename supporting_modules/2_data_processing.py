@@ -74,6 +74,9 @@ def apply_filters(df):
     print(f"After exchange filter: {df.shape[0]} rows")
     df = df.groupby('permno').filter(lambda x: len(x) >= 12)
     print(f"After min obs filter: {df.shape[0]} rows")
+
+    # After merging Compustat and CRSP data
+    df = df[(df['at'] > 0) & (df['gdwl'].notna())]
     
     # Fix: Reset index to align with df
     df['zero_streak'] = df.groupby('permno')['ret'].apply(

@@ -189,4 +189,4 @@ def main(ga_choice="GA1_lagged"):
         raise
 
 if __name__ == "__main__":
-    main(ga_choice="GA3_lagged")  # Swap to "GA2_lagged" or "GA3_lagged" here
+    main(ga_choice="GA1_lagged")  # Swap to "GA2_lagged" or "GA3_lagged" here
