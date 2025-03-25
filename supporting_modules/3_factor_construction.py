@@ -17,7 +17,7 @@ logger = logging.getLogger()
 def load_processed_data(directory="data/", filename="processed_data.csv", ga_choice="GA1_lagged"):
     filepath = os.path.join(directory, filename)
     logger.info(f"Loading processed data from {filepath} with {ga_choice} ...")
-    required_cols = ['permno', 'gvkey', 'crsp_date', 'FF_year', ga_choice, 'ret', 'prc', 'csho']
+    required_cols = ['permno', 'gvkey', 'crsp_date', 'FF_year', ga_choice, 'ret', 'prc', 'csho','at']
     try:
         df = pd.read_csv(filepath, parse_dates=['crsp_date'], usecols=required_cols, low_memory=False)
         df = df.drop_duplicates(subset=['permno', 'crsp_date'])
@@ -94,32 +94,43 @@ def assign_ga_deciles(df, ga_column):
     df = df[df['FF_year'] < 2024].copy()
     df['decile'] = 0  # Initialize as int
     decile_assignments = []
+
     for year, group in df.groupby('FF_year'):
-        goodwill_firms = group[group[ga_column].notna()].copy()
+        # Only include firms with valid GA and positive total assets
+        goodwill_firms = group[
+            group[ga_column].notna() &
+            (group[ga_column] > 0) &
+            (group['at'] > 0)
+        ].copy()
+
+        excluded = group.shape[0] - goodwill_firms.shape[0]
+        logger.info(f"Year {year}: Excluded {excluded} firms due to missing or invalid goodwill or total assets.")
         logger.info(f"Year {year}: Goodwill firms = {len(goodwill_firms)}")
+
         if len(goodwill_firms) >= 20 and goodwill_firms[ga_column].nunique() > 5:
             try:
-                # Step 1: Assign Decile 1 to zero or negative goodwill firms
-                goodwill_firms['decile'] = np.where(goodwill_firms[ga_column] <= 0, 1, 0)
-                # Step 2: Filter positive firms
-                positive = goodwill_firms[goodwill_firms[ga_column] > 0].copy()
-                # Step 3: Assign Deciles 2-10 to positive firms
-                if len(positive) >= 18:  # Need at least 2 firms per decile for 9 deciles
-                    positive['decile'] = pd.qcut(positive[ga_column], 9, labels=False, duplicates='drop') + 2
-                    positive['decile'] = positive['decile'].astype(int)
-                    goodwill_firms.loc[positive.index, 'decile'] = positive['decile']
+                # Step 1: Assign Decile 1 to zero or negative goodwill firms (none expected after filtering)
+                goodwill_firms['decile'] = 0
+
+                # Step 2: Assign Deciles 1-10 to positive goodwill firms
+                goodwill_firms['decile'] = pd.qcut(goodwill_firms[ga_column], 10, labels=False, duplicates='drop') + 1
+                goodwill_firms['decile'] = goodwill_firms['decile'].astype(int)
+
                 decile_assignments.append(goodwill_firms[['permno', 'crsp_date', 'decile']])
             except ValueError as e:
-                logger.warning(f"Year {year}: Decile failed - {e}")
+                logger.warning(f"Year {year}: Decile assignment failed - {e}")
         else:
             logger.warning(f"Year {year}: Insufficient data (firms: {len(goodwill_firms)}, unique GA: {goodwill_firms[ga_column].nunique()})")
+
     if not decile_assignments:
         logger.error("No decile assignments!")
         raise ValueError("Decile assignment failed.")
+
     deciles_df = pd.concat(decile_assignments, axis=0)
     df = df.merge(deciles_df, on=['permno', 'crsp_date'], how='left', suffixes=('', '_new'))
     df['decile'] = df['decile_new'].fillna(df['decile']).astype(int)
     df.drop(columns=['decile_new'], inplace=True)
+
     logger.info("✅ Decile distribution:\n%s", df['decile'].value_counts().sort_index())
     os.makedirs("analysis_output", exist_ok=True)
     df.to_csv(f'analysis_output/decile_assignments_{ga_column}.csv', index=False)
