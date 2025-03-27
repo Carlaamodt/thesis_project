@@ -145,10 +145,11 @@ def create_ga_factor(df, ga_column):
     logger.info(f"Creating {ga_column} factor returns...")
     df['crsp_date'] = pd.to_datetime(df['crsp_date']) + pd.offsets.MonthEnd(0)
     # Relax return cap to |ret| <= 10
-    df = df[df['decile'].isin([1, 10]) & df['ret'].notna() & (df['ret'].abs() <= 10)].copy()
+    df = df[df['decile'].isin([1, 10]) & df['ret'].notna() & (df['ret'].abs() <= 1)].copy()
     if len(df) < 100:
         logger.error(f"Too few rows for factor: {len(df)}")
         raise ValueError("Insufficient data.")
+    logger.info(f"Number of firms with |ret| > 1: {len(df[df['ret'].abs() > 1])}")
     
     df['ME'] = np.where((df['prc'] > 0) & (df['csho'] > 0), np.abs(df['prc']) * df['csho'], np.nan)
     df = df[df['ME'].notna() & (df['ME'] > 0)]

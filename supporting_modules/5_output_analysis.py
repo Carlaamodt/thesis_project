@@ -275,4 +275,4 @@ def main(ga_choice="GA1_lagged", industries=None):
         raise
 
 if __name__ == "__main__":
-    main(ga_choice="GA1_lagged")  # Switch to "GA2_lagged" or "GA3_lagged"
+    main(ga_choice="GA2_lagged")  # Switch to "GA2_lagged" or "GA3_lagged"
