@@ -1,41 +1,44 @@
 import pandas as pd
-import numpy as np
-import statsmodels.api as sm
 import os
+import statsmodels.api as sm
+import numpy as np
+import logging
 
 #########################
 ### Load Factor Data ###
 #########################
+import logging
 
-def load_data(weighting="equal", ga_choice="GA1_lagged"):
-    """Loads monthly GA factor returns and Fama-French factors."""
-    print(f"📥 Loading monthly {weighting}-weighted {ga_choice} factor returns...")
-    ga_factor_path = f"output/factors/ga_factor_returns_monthly_{weighting}_{ga_choice}.csv"
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
+
+
+def load_data():
+    """Loads monthly GA factor returns and WRDS-downloaded Fama-French factors (in decimals)."""
+    # Load GA factors
+    print("📥 Loading monthly GA factor returns...")
+    ga_factor_path = "output/factors/ga_factors.csv"
     if not os.path.exists(ga_factor_path):
         print(f"❌ Error: GA factor return file not found at {ga_factor_path}")
         return None, None
     
     ga_factor = pd.read_csv(ga_factor_path, parse_dates=['date'])
+    ga_factor['date'] = pd.to_datetime(ga_factor['date']) + pd.offsets.MonthEnd(0)
+    ga_factor.set_index('date', inplace=True)
+    ga_factor.columns = ga_factor.columns.str.lower()
 
-    print("📥 Loading monthly Fama-French factors...")
+    # Load local WRDS-downloaded Fama-French data
+    print("📥 Loading WRDS-downloaded Fama-French 5-factor + Momentum data...")
     ff_factors_path = "data/FamaFrench_factors_with_momentum.csv"
     if not os.path.exists(ff_factors_path):
-        print(f"❌ Error: Fama-French file not found at {ff_factors_path}")
+        print(f"❌ Error: Fama-French factor file not found at {ff_factors_path}")
         return None, None
 
     ff_factors = pd.read_csv(ff_factors_path, parse_dates=['date'])
-    
-    # Ensure lowercase for consistency
-    ga_factor.columns = ga_factor.columns.str.lower()
+    ff_factors['date'] = pd.to_datetime(ff_factors['date']) + pd.offsets.MonthEnd(0)
+    ff_factors.set_index('date', inplace=True)
     ff_factors.columns = ff_factors.columns.str.lower()
-
-    # Check and display date ranges
-    print("✅ GA factor date range:", ga_factor['date'].min(), "to", ga_factor['date'].max())
-    print("✅ Fama-French factor date range:", ff_factors['date'].min(), "to", ff_factors['date'].max())
-
-    # Align Fama-French dataset to start no earlier than GA factor
-    start_date = ga_factor['date'].min()
-    ff_factors = ff_factors[ff_factors['date'] >= start_date.replace(day=1)]  # Align to month start
 
     # Check required columns
     required_factors = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom', 'rf']
@@ -44,50 +47,61 @@ def load_data(weighting="equal", ga_choice="GA1_lagged"):
         print(f"❌ Error: Missing columns in Fama-French dataset: {missing_factors}")
         return None, None
 
-    print("✅ Fama-French dataset filtered. Period:", ff_factors['date'].min(), "to", ff_factors['date'].max())
+    # Filter dates to GA factor range
+    start_date = ga_factor.index.min()
+    ff_factors = ff_factors[ff_factors.index >= start_date]
+
+    print("✅ GA factor date range:", ga_factor.index.min(), "to", ga_factor.index.max())
+    print("✅ Fama-French factor date range:", ff_factors.index.min(), "to", ff_factors.index.max())
     return ga_factor, ff_factors
+
 
 #############################
 ### Merge and Prepare Data ###
 #############################
 
 def merge_data(ga_factor, ff_factors):
-    """Merges GA factor data with Fama-French factors on date."""
+    """Merges GA factor data with Fama-French factors on date index."""
     print("🔄 Merging GA factor with Fama-French factors...")
-    
-    # Adjust FF dates to month-end to match GA factors
-    ff_factors['date'] = ff_factors['date'] + pd.offsets.MonthEnd(0)
 
-    # Merge on date
-    merged_df = pd.merge(ga_factor, ff_factors, on="date", how="inner")
-    merged_df['rf'] = merged_df['rf'] / 100
+    merged_df = ga_factor.join(ff_factors, how='inner')
 
+    # Drop future dates (2024+)
+    merged_df = merged_df[merged_df.index.year < 2024]
+    merged_df.sort_index(inplace=True)
 
-    # Drop 2024 and beyond if any
-    merged_df = merged_df[merged_df['date'].dt.year < 2024]
-    print(f"✅ Merged dataset: {merged_df.shape[0]} months, from {merged_df['date'].min()} to {merged_df['date'].max()}")
+    print(f"✅ Merged dataset: {merged_df.shape[0]} months, from {merged_df.index.min()} to {merged_df.index.max()}")
+
+    # Check for any missing data
+    missing = merged_df.isna().sum()
+    if missing.sum() > 0:
+        print(f"⚠️ Warning: Missing values in merged dataset:\n{missing[missing > 0]}")
+
     return merged_df
 
 #########################
 ### Run Factor Models ###
 #########################
 
-def run_factor_models(df, weighting, ga_choice):
+def run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group):
     """Runs factor regressions for GA factor returns with Newey-West robust standard errors and annualized alpha."""
-    print(f"📊 Running factor regressions for {weighting}-weighted {ga_choice} factor...")
-
-    # Check necessary columns
-    if 'ga_factor' not in df.columns or 'rf' not in df.columns:
-        print("❌ Error: GA factor or risk-free rate missing!")
-        return None
+    print(f"📊 Running factor regressions for {weighting}-weighted {ga_choice} factor (Size: {size_group})...")
 
     # Compute GA factor excess returns
-    df['ga_factor_excess'] = df['ga_factor'] - df['rf']
+    # Log the raw GA factor BEFORE subtracting rf
+    logger.info(f"Running diagnostics for {ga_factor_column} (raw GA factor)")
+    print("📊 Raw GA factor return summary:\n", df[ga_factor_column].describe())
+    print(f"❓ Missing: {df[ga_factor_column].isna().sum()} / {len(df)} rows")
+
+    # Then proceed as usual
+    df['ga_factor_excess'] = df[ga_factor_column] - df['rf']
     print("📈 GA factor excess return summary:\n", df['ga_factor_excess'].describe())
+    logger.info("Newey-West standard errors using maxlags=3")
+
 
     # Skip if mostly NaNs
     if df['ga_factor_excess'].isna().mean() > 0.5:
-        print(f"⚠️ Warning: Over 50% missing GA factor excess returns for {weighting}-weighted.")
+        print(f"⚠️ Warning: Over 50% missing GA factor excess returns for {weighting}-weighted {ga_choice} (Size: {size_group}).")
         return None
 
     # Define models to run
@@ -122,7 +136,8 @@ def run_factor_models(df, weighting, ga_choice):
         res = {
             'Model': model_name,
             'Weighting': weighting,
-            'GA Choice': ga_choice,
+            'Size Group': size_group,
+            'GA Choice': ga_choice,  # Use the actual metric name
             'Alpha (const)': alpha_monthly,
             'Alpha (annualized)': alpha_annualized,
             'Alpha p-value (HAC)': model.pvalues.get('const', np.nan),
@@ -140,9 +155,8 @@ def run_factor_models(df, weighting, ga_choice):
 
         all_results.append(res)
 
-        # Print model summary for review
-        print(f"\n📊 {model_name} Regression Results ({weighting}-weighted {ga_choice}) with Newey-West HAC SE:\n")
-        print(model.summary())
+        # Log model summary for review
+        logger.info(f"{model_name} Regression Results ({weighting}-weighted {ga_choice}, Size: {size_group}) with Newey-West HAC SE:\n{model.summary()}")
 
     return pd.DataFrame(all_results)
 
@@ -152,42 +166,63 @@ def run_factor_models(df, weighting, ga_choice):
 
 def main():
     """Main function to perform regression analysis and save results to multi-sheet Excel."""
-    results_by_ga = {"GA1": None, "GA2": None, "GA3": None}  # Store results for each GA
+    # Define GA choices and factor columns
+    ga_choices = {
+        "goodwill_to_sales_lagged": "GA1",
+        "goodwill_to_equity_lagged": "GA2",
+        "goodwill_to_market_cap_lagged": "GA3"
+    }
+    
+    # Store results for each GA metric
+    results_by_ga = {"GA1": [], "GA2": [], "GA3": []}
 
-    for weighting in ["equal", "value"]:
-        for ga_choice in ["GA1_lagged", "GA2_lagged", "GA3_lagged"]:
-            # Load data
-            ga_factor, ff_factors = load_data(weighting=weighting, ga_choice=ga_choice)
-            if ga_factor is None or ff_factors is None:
-                print(f"❌ Data loading failed for {weighting}-weighted {ga_choice} factor.")
-                continue  # Skip to next GA if file missing
+    # Load data
+    ga_factor, ff_factors = load_data()
+    if ga_factor is None or ff_factors is None:
+        print("❌ Data loading failed.")
+        return
 
-            # Merge datasets
-            df = merge_data(ga_factor, ff_factors)
-            if len(df) == 0:
-                print(f"❌ Merged dataset empty for {weighting}-weighted {ga_choice}.")
-                continue
+    # Merge datasets
+    df = merge_data(ga_factor, ff_factors)
+    if len(df) == 0:
+        print("❌ Merged dataset empty.")
+        return
 
-            # Run regressions
-            model_results = run_factor_models(df, weighting, ga_choice)
-            if model_results is not None:
-                # Assign to corresponding GA sheet (strip '_lagged' for sheet name)
-                ga_key = ga_choice.replace("_lagged", "")
-                if results_by_ga[ga_key] is None:
-                    results_by_ga[ga_key] = model_results
+    # Loop over each GA metric, weighting, and size group
+    for ga_choice, ga_key in ga_choices.items():
+        print(f"\n🔍 Processing GA metric: {ga_choice} (Sheet: {ga_key})")
+        for weighting in ["ew", "vw"]:
+            for size_group in ["all", "small", "big"]:
+                # Construct the factor column name
+                ga_factor_column = f"{ga_choice}_{weighting}" if size_group == "all" else f"{ga_choice}_{size_group}_{weighting}"
+                
+                if ga_factor_column not in df.columns:
+                    print(f"⚠️ Warning: Factor column {ga_factor_column} not found in dataset. Skipping...")
+                    continue
+
+                # Run regressions
+                model_results = run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group)
+                if model_results is not None:
+                    print(f"✅ Adding results for {ga_factor_column} to {ga_key}")
+                    results_by_ga[ga_key].append(model_results)
                 else:
-                    results_by_ga[ga_key] = pd.concat([results_by_ga[ga_key], model_results], ignore_index=True)
+                    print(f"❌ No results for {ga_factor_column}")
 
-    # Save results to multi-sheet Excel
+    # Combine results for each GA metric and save to Excel
     output_path = "output/ga_factor_regression_results_monthly.xlsx"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
-        for ga_key, results in results_by_ga.items():
-            if results is not None:
-                results.to_excel(writer, sheet_name=ga_key, index=False)
+        for ga_key in results_by_ga:
+            if results_by_ga[ga_key]:
+                combined_results = pd.concat(results_by_ga[ga_key], ignore_index=True)
+                # Round numerical columns for better readability
+                numerical_cols = [col for col in combined_results.columns if 'beta' in col or 'p-value' in col or 't-stat' in col or 'Alpha' in col or 'R-squared' in col]
+                combined_results[numerical_cols] = combined_results[numerical_cols].round(4)
+                print(f"📝 Writing {len(combined_results)} rows to sheet {ga_key}")
+                combined_results.to_excel(writer, sheet_name=ga_key, index=False)
             else:
-                # Write empty sheet if no results
+                print(f"⚠️ No results to write for sheet {ga_key}. Creating empty sheet.")
                 pd.DataFrame().to_excel(writer, sheet_name=ga_key, index=False)
     
     print(f"\n✅ All monthly regression results saved to {output_path} with sheets GA1, GA2, GA3")

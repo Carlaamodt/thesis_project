@@ -63,7 +63,18 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     compustat['FF_year'] = compustat['compustat_date'].dt.year + 1
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
+
+    # ✅ Detect and warn on duplicate CRSP entries
+    dupes = crsp_ret.duplicated(subset=['permno', 'crsp_date'], keep=False)
+    num_dupes = dupes.sum()
+    if num_dupes > 0:
+        print(f"⚠️ Warning: Found {num_dupes} duplicate rows in CRSP returns for permno + crsp_date.")
+        print("Here are some examples:")
+        print(crsp_ret.loc[dupes].sort_values(['permno', 'crsp_date']).head(5))
+
+    # Drop them
     crsp_ret = crsp_ret.drop_duplicates(subset=['permno', 'crsp_date'])
+
     merged = pd.merge(crsp_ret, compustat, on=['permno', 'FF_year'], how='inner')
     print(f"✅ Merged dataset shape: {merged.shape}")
     return merged
@@ -82,7 +93,7 @@ def apply_filters(df):
     df = df.groupby('permno').filter(lambda x: len(x) >= 12)
     print(f"After min obs filter: {df.shape[0]} rows")
 
-    # Positive assets and non-missing goodwill (already in code)
+    # Positive assets and non-missing goodwill
     df = df[(df['at'] > 0) & (df['gdwl'].notna())]
     # Add positive equity filter
     df = df[df['ceq'] > 0]
@@ -95,18 +106,21 @@ def apply_filters(df):
     df = df[df['zero_streak'] < 6]
     print(f"After zero return filter: {df.shape[0]} rows")
     
-    # Backfill prc before computing ME
+    # Backfill prc before computing market cap
     df['prc'] = df.groupby('permno')['prc'].ffill()
-    df['ME'] = df['shrout'] * df['prc'].abs()
-    # Filter for non-missing ME
-    df = df[df['ME'].notna()]
-    print(f"After non-missing ME filter: {df.shape[0]} rows")
+    # Rename ME to market_cap for clarity
+    df['market_cap'] = df['shrout'] * df['prc'].abs()
+    # Add NYSE indicator (exchcd == 1 for NYSE)
+    df['is_nyse'] = (df['exchcd'] == 1).astype(int)
+    # Filter for non-missing market cap
+    df = df[df['market_cap'].notna()]
+    print(f"After non-missing market_cap filter: {df.shape[0]} rows")
     
-    # Size filter (ME > 5th percentile)
-    df['ME_roll'] = df.groupby('permno')['ME'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
-    df['ME_percentile'] = df.groupby('crsp_date')['ME_roll'].rank(pct=True)
-    df = df[df['ME_percentile'] > 0.05]
-    print(f"After ME filter: {df.shape[0]} rows")
+    # Size filter (market_cap > 5th percentile)
+    df['market_cap_roll'] = df.groupby('permno')['market_cap'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
+    df['market_cap_percentile'] = df.groupby('crsp_date')['market_cap_roll'].rank(pct=True)
+    df = df[df['market_cap_percentile'] > 0.05]
+    print(f"After market_cap filter: {df.shape[0]} rows")
     
     # Penny stock filter
     df['avg_price'] = df.groupby('permno')['prc'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
@@ -118,7 +132,6 @@ def apply_filters(df):
     df = df[df['vol'] >= 0.05 * df['avg_vol']]
     print(f"After volume filter: {df.shape[0]} rows")
     
-    # Removed extreme return filter (|ret| <= 10) - handled in Code 3
     print(f"✅ Filtering completed. Final shape: {df.shape}")
     return df
 
@@ -128,20 +141,26 @@ def apply_filters(df):
 
 def compute_goodwill_factors(df):
     print("📊 Computing Goodwill factors...")
-    df['GA1'] = df['gdwl'] / df['at']
-    df['GA2'] = df['gdwl'] / df['ceq']
-    df['MarketCap'] = df['csho'] * df['prc']
-    df['GA3'] = df['gdwl'] / df['MarketCap']
-    df['GA1_lagged'] = df.groupby('gvkey')['GA1'].shift(1)
-    df['GA2_lagged'] = df.groupby('gvkey')['GA2'].shift(1)
-    df['GA3_lagged'] = df.groupby('gvkey')['GA3'].shift(1)
-    for col in ['GA1', 'GA2', 'GA3', 'GA1_lagged', 'GA2_lagged', 'GA3_lagged']:
+    # Rename GA metrics
+    df['goodwill_to_sales'] = df['gdwl'] / df['revt']  # Previously GA1
+    df['goodwill_to_equity'] = df['gdwl'] / df['ceq']  # Previously GA2
+    df['goodwill_to_market_cap'] = df['gdwl'] / df['market_cap']  # Previously GA3
+    # Update lagged versions
+    df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(1)
+    df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(1)
+    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(1)
+    # Replace inf with NaN
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
+                'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
-    for col in ['GA1', 'GA2', 'GA3']:
+    # Winsorize non-lagged GA metrics
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
+                'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
         lower, upper = df[col].quantile([0.01, 0.99])
         df[col] = df[col].clip(lower, upper)
+
     print("📊 Goodwill Factor Summary:")
-    print(df[['GA1', 'GA2', 'GA3']].describe())
+    print(df[['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']].describe())
     return df
 
 ##################################

@@ -170,6 +170,28 @@ linkdt:    First Effective Date of Link
 linkenddt: Last Effective Date of Link
 """
 
+# -------------------------
+# ✅ Diagnostics for CRSP
+# -------------------------
+
+# CRSP Return Diagnostics
+print("\n✅ CRSP Return Sample:")
+print(crsp_ret.head())
+print("Date range:", crsp_ret['date'].min(), "to", crsp_ret['date'].max())
+print("Unique permnos:", crsp_ret['permno'].nunique())
+
+# CRSP Delist Diagnostics
+print("\n✅ CRSP Delist Sample:")
+print(crsp_delist.head())
+print("Date range:", crsp_delist['dlstdt'].min(), "to", crsp_delist['dlstdt'].max())
+print("Unique delisted permnos:", crsp_delist['permno'].nunique())
+
+# Linktable Diagnostics (optional but helpful)
+print("\n✅ Link Table Sample:")
+print(crsp_compustat.head())
+print("Unique gvkeys:", crsp_compustat['gvkey'].nunique())
+print("Unique permnos linked:", crsp_compustat['permno'].nunique())
+
 #########################
 ### SAVE AS CSV FILES ###
 #########################
@@ -186,6 +208,7 @@ crsp_delist_name = os.path.join(directory, f'data/crsp_delist_{date_str}.csv')
 crsp_compustat_name = os.path.join(directory, f'data/crsp_compustat_{date_str}.csv')
 
 # Save CSVs with timestamped names
+os.makedirs('data', exist_ok=True)
 compustat.to_csv(compustat_name, date_format='%Y-%m-%d', index=False)
 crsp_ret.to_csv(crsp_ret_name, date_format='%Y-%m-%d', index=False)
 crsp_delist.to_csv(crsp_delist_name, date_format='%Y-%m-%d', index=False)

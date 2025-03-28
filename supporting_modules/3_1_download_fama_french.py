@@ -33,11 +33,14 @@ factor_cols = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom', 'rf']
 for col in factor_cols:
     ff_factors[col] = pd.to_numeric(ff_factors[col], errors='coerce')
 
-# Clip implausible values
-print("🧹 Clipping outliers...")
-ff_factors['rf'] = ff_factors['rf'].clip(upper=0.005)  # 0.5% monthly
-for col in ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom']:
-    ff_factors[col] = ff_factors[col].clip(lower=-0.5, upper=0.5)
+# log most extreme values per factor for inspection
+print("\n🔍 Most extreme monthly values per factor:")
+for col in factor_cols:
+    print(f"\n{col.upper()} — Top 5:")
+    print(ff_factors[[col]].sort_values(by=col, ascending=False).head(5))
+    print(f"{col.upper()} — Bottom 5:")
+    print(ff_factors[[col]].sort_values(by=col).head(5))
+
 
 # Sort and cleanup
 ff_factors.columns = ff_factors.columns.str.lower()

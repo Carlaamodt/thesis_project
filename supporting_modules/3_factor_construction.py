@@ -9,15 +9,17 @@ import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
+# Toggle this to control whether intermediate CSVs (e.g., deciles, EW/VW factor returns) are saved
+SAVE_INTERMEDIATE_FILES = True
 
 ##################################
 ### Load Processed Data
 ##################################
 
-def load_processed_data(directory="data/", filename="processed_data.csv", ga_choice="GA1_lagged"):
+def load_processed_data(directory="data/", filename="processed_data.csv", ga_choice="goodwill_to_sales_lagged"):
     filepath = os.path.join(directory, filename)
     logger.info(f"Loading processed data from {filepath} with {ga_choice} ...")
-    required_cols = ['permno', 'gvkey', 'crsp_date', 'FF_year', ga_choice, 'ret', 'prc', 'csho','at']
+    required_cols = ['permno', 'gvkey', 'crsp_date', 'FF_year', ga_choice, 'ret', 'prc', 'csho', 'at', 'market_cap', 'is_nyse']
     try:
         df = pd.read_csv(filepath, parse_dates=['crsp_date'], usecols=required_cols, low_memory=False)
         df = df.drop_duplicates(subset=['permno', 'crsp_date'])
@@ -88,10 +90,15 @@ def count_firms_per_year(df, ga_column):
 ### Assign GA Deciles
 ##################################
 
-def assign_ga_deciles(df, ga_column):
-    logger.info(f"Assigning {ga_column} deciles...")
+def assign_ga_deciles(df, ga_column, size_group=None):
+    logger.info(f"Assigning {ga_column} deciles (Size: {size_group if size_group else 'All'})...")
     # Filter out 2024
     df = df[df['FF_year'] < 2024].copy()
+    # Filter by size group if specified
+    if size_group:
+        df = df[df['size_group'] == size_group].copy()
+    logger.info(f"Missing values in {ga_column}: {df[ga_column].isna().sum()} / {len(df)} rows ({df[ga_column].isna().mean():.2%})")
+
     df['decile'] = 0  # Initialize as int
     decile_assignments = []
 
@@ -133,19 +140,24 @@ def assign_ga_deciles(df, ga_column):
 
     logger.info("✅ Decile distribution:\n%s", df['decile'].value_counts().sort_index())
     os.makedirs("analysis_output", exist_ok=True)
-    df.to_csv(f'analysis_output/decile_assignments_{ga_column}.csv', index=False)
-    logger.info(f"Saved to analysis_output/decile_assignments_{ga_column}.csv")
+    if SAVE_INTERMEDIATE_FILES:
+        os.makedirs("analysis_output", exist_ok=True)
+        df.to_csv(f'analysis_output/decile_assignments_{ga_column}_{size_group if size_group else "all"}.csv', index=False)
+        logger.info(f"Saved to analysis_output/decile_assignments_{ga_column}_{size_group if size_group else 'all'}.csv")
     return df
 
 ##################################
 ### Create GA Factor Returns
 ##################################
 
-def create_ga_factor(df, ga_column):
-    logger.info(f"Creating {ga_column} factor returns...")
+def create_ga_factor(df, ga_column, size_group=None):
+    logger.info(f"Creating {ga_column} factor returns (Size: {size_group if size_group else 'All'})...")
     df['crsp_date'] = pd.to_datetime(df['crsp_date']) + pd.offsets.MonthEnd(0)
-    # Relax return cap to |ret| <= 10
+    # Apply return cap |ret| <= 1
     df = df[df['decile'].isin([1, 10]) & df['ret'].notna() & (df['ret'].abs() <= 1)].copy()
+    total = len(df)
+    logger.info(f"Dropped rows due to |ret| > 1: {df['ret'].abs().gt(1).sum()} out of {total + df['ret'].abs().gt(1).sum()}")
+
     if len(df) < 100:
         logger.error(f"Too few rows for factor: {len(df)}")
         raise ValueError("Insufficient data.")
@@ -159,7 +171,11 @@ def create_ga_factor(df, ga_column):
         ret_mean=('ret', 'mean'),
         num_firms=('permno', 'count')
     ).unstack()
-    # Increase min firms to 10
+    d1_counts = equal_weighted['num_firms'].get(1, pd.Series())
+    d10_counts = equal_weighted['num_firms'].get(10, pd.Series())
+    logger.info(f"Mean firms per month — D1: {d1_counts.mean():.2f}, D10: {d10_counts.mean():.2f}")
+
+    # Check for minimum firms
     min_firms = equal_weighted['num_firms'].min().min()
     if min_firms < 10:
         sparse_dates = equal_weighted['num_firms'][(equal_weighted['num_firms'][1] < 10) |
@@ -173,7 +189,7 @@ def create_ga_factor(df, ga_column):
 
     # Value-weighted portfolio
     def weighted_ret(x):
-        if len(x) < 10 or x['ME'].sum() <= 0:  # Increase min firms to 10
+        if len(x) < 10 or x['ME'].sum() <= 0:
             return np.nan
         return np.average(x['ret'], weights=x['ME'])
 
@@ -186,23 +202,28 @@ def create_ga_factor(df, ga_column):
 
     # Save results
     os.makedirs('output/factors', exist_ok=True)
-    equal_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_equal_{ga_column}.csv', index=False)
-    value_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_value_{ga_column}.csv', index=False)
+    suffix = f"_{size_group.lower()}" if size_group else ""
+    if SAVE_INTERMEDIATE_FILES:
+        os.makedirs('output/factors', exist_ok=True)
+        equal_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_equal_{ga_column}{suffix}.csv', index=False)
+        value_weighted.to_csv(f'output/factors/ga_factor_returns_monthly_value_{ga_column}{suffix}.csv', index=False)
+
 
     # Factor statistics
     for name, factor in [("Equal-weighted", equal_weighted), ("Value-weighted", value_weighted)]:
         stats = factor['ga_factor'].describe()
         annualized_mean = stats['mean'] * 12
         annualized_std = stats['std'] * np.sqrt(12)
-        logger.info(f"{name} {ga_column} factor stats:\n{stats}\n"
+        logger.info(f"{name} {ga_column} factor stats (Size: {size_group if size_group else 'All'}):\n{stats}\n"
                     f"Annualized Mean: {annualized_mean:.4f}, Annualized Std: {annualized_std:.4f}")
         if stats['count'] < 12 or stats['std'] == 0:
             logger.warning(f"{name} factor might be unreliable: {stats}")
 
-    logger.info(f"✅ {ga_column} factor returns saved to 'output/factors/'")
-    df[['permno', 'crsp_date', 'FF_year', 'decile', ga_column, 'ME']].to_csv(
-        f'analysis_output/decile_assignments_{ga_column}.csv', index=False
-    )
+    logger.info(f"✅ {ga_column} factor returns (Size: {size_group if size_group else 'All'}) saved to 'output/factors/'")
+    if SAVE_INTERMEDIATE_FILES:
+        df[['permno', 'crsp_date', 'FF_year', 'decile', ga_column, 'ME']].to_csv(
+        f'analysis_output/decile_assignments_{ga_column}_{size_group if size_group else "all"}.csv', index=False
+        )
     return equal_weighted, value_weighted
 
 ##################################
@@ -211,16 +232,69 @@ def create_ga_factor(df, ga_column):
 
 def main():
     try:
-        # Loop over GA1, GA2, GA3
-        for ga_choice in ["GA1_lagged", "GA2_lagged", "GA3_lagged"]:
+        # Define GA choices with new names
+        ga_choices = ["goodwill_to_sales_lagged", "goodwill_to_equity_lagged", "goodwill_to_market_cap_lagged"]
+        # Initialize list to store all factor returns
+        all_factor_returns_list = []
+
+        for ga_choice in ga_choices:
             print(f"\n🔄 Processing {ga_choice}...")
+            # Load data
             df = load_processed_data(ga_choice=ga_choice)
             ga_lagged_diagnostics(df, ga_column=ga_choice)
             count_firms_per_year(df, ga_column=ga_choice)
+
+            # Single sort: Assign deciles and compute factor returns (all firms)
             df = assign_ga_deciles(df, ga_column=ga_choice)
-            equal_weighted, value_weighted = create_ga_factor(df, ga_column=ga_choice)
+            ew_all, vw_all = create_ga_factor(df, ga_column=ga_choice)
+
+            # Double sort: First sort by size (using NYSE median), then by GA metric
+            # Step 1: Compute NYSE median market cap (lagged by 1 month)
+            nyse_medians = df[df['is_nyse'] == 1].groupby('crsp_date')['market_cap'].median().shift(1)
+            df = df.merge(nyse_medians.rename('nyse_median'), on='crsp_date', how='left')
+
+            # Step 2: Assign size groups (Small: below NYSE median, Big: above NYSE median)
+            df['size_group'] = np.where(df['market_cap'] <= df['nyse_median'], 'Small', 'Big')
+
+            # Step 3: Compute factor returns for each size group
+            ew_small, vw_small = None, None
+            ew_big, vw_big = None, None
+            for size_group in ['Small', 'Big']:
+                # Assign deciles within this size group
+                df_size = assign_ga_deciles(df, ga_column=ga_choice, size_group=size_group)
+                # Compute factor returns for this size group
+                ew_size, vw_size = create_ga_factor(df_size, ga_column=ga_choice, size_group=size_group)
+                if size_group == 'Small':
+                    ew_small, vw_small = ew_size, vw_size
+                else:
+                    ew_big, vw_big = ew_size, vw_size
+
+            # Combine factor returns into a single DataFrame for this GA metric
+            factor_returns = ew_all[['date']].copy()
+            factor_returns[f'{ga_choice}_ew'] = ew_all['ga_factor']
+            factor_returns[f'{ga_choice}_vw'] = vw_all['ga_factor']
+            factor_returns[f'{ga_choice}_small_ew'] = ew_small['ga_factor']
+            factor_returns[f'{ga_choice}_small_vw'] = vw_small['ga_factor']
+            factor_returns[f'{ga_choice}_big_ew'] = ew_big['ga_factor']
+            factor_returns[f'{ga_choice}_big_vw'] = vw_big['ga_factor']
+
+            # Set date as index and append to list
+            factor_returns.set_index('date', inplace=True)
+            all_factor_returns_list.append(factor_returns)
+
             logger.info(f"Final dataset shape for {ga_choice}: {df.shape}")
+
+        # Combine all factor returns using pd.concat
+        all_factor_returns = pd.concat(all_factor_returns_list, axis=1, join='outer')
+        # Reset index to make date a column again
+        all_factor_returns.reset_index(inplace=True)
+
+        # Save all factor returns to a single file
+        os.makedirs('output/factors', exist_ok=True)
+        all_factor_returns.to_csv('output/factors/ga_factors.csv', index=False)
+        logger.info("✅ All factor returns saved to 'output/factors/ga_factors.csv'")
         print("\n✅ All GA factors processed successfully!")
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         raise
