@@ -35,9 +35,9 @@ scripts = [
     "supporting_modules/3_1_download_fama_french.py",   # Download FF + Momentum data
     "supporting_modules/3_factor_construction.py",      # Construct GA factor (Equal/Value weighted)
     "supporting_modules/4_factor_model.py",             # Run factor model regressions (GA, MKT, SMB, HML etc.)
-    "supporting_modules/0_Datanalysis.py",              # Data diagnostic & exploratory analysis
+    "supporting_modules/2_Datanalysis.py",              # Data diagnostic & exploratory analysis
     "supporting_modules/5_output_analysis.py",          # Thesis tables, figures, portfolio characteristics
-    "supporting_modules/6_visualization_and_hypothesis_tests.py"  # Visualizations and hypothesis tests
+    "supporting_modules/6_regression_analysis.py"  # Visualizations and hypothesis tests
 ]
 
 # ------------------- Function to Run Each Script ----------------------
