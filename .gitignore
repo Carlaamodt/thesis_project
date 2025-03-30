@@ -8,6 +8,7 @@ __pycache__/
 *.xls
 *.png
 *.txt
+*.tex
 
 # System files
 .DS_Store
