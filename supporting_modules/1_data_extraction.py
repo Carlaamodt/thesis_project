@@ -135,6 +135,7 @@ crsp_delist = conn.raw_sql("""
                           select permno, dlret, dlstdt, dlstcd
                           from crsp.msedelist
                            where dlstdt < '01/01/2024' -- ✅ EXCLUDE delistings dated 2024+
+                            and dlstdt >= '01/01/2002'
 
                           """, date_cols = ['dlstdt'])
 
