@@ -198,6 +198,99 @@ def ga_factor_diagnostics(proc_df, ff_df, ga_factors_df, ga_choice="goodwill_to_
     ga_summary.to_excel(filepath, index=False)
     print(f"✅ Saved factor summary: {filepath}")
 
+    ########################################
+### Market Return Plot + Decile Alphas ###
+########################################
+
+def market_return_reference_plot(ff_df, output_dir="analysis_output"):
+    if 'mkt_rf' not in ff_df.columns or 'rf' not in ff_df.columns:
+        print("⚠️ Missing market or risk-free columns in FF data.")
+        return
+
+    ff_df = ff_df.copy()
+    ff_df['mkt'] = ff_df['mkt_rf'] + ff_df['rf']  # reconstruct actual return
+    ff_df['mkt_cum_return'] = (1 + ff_df['mkt']).cumprod()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(ff_df['date'], ff_df['mkt_cum_return'], label='Market Return (Actual)', linestyle='-')
+    plt.title("📈 Market Cumulative Return (Not Risk-Adjusted)")
+    plt.xlabel("Date")
+    plt.ylabel("Cumulative Return")
+    plt.grid(True, alpha=0.6)
+    plt.legend()
+    filepath = os.path.join(output_dir, "market_actual_cumulative_return.png")
+    plt.savefig(filepath)
+    plt.close()
+    print(f"✅ Saved market cumulative return plot: {filepath}")
+
+def decile_alpha_regressions(proc_df, decile_df, ff_df, ga_choice="goodwill_to_sales_lagged"):
+    print(f"📊 Running alpha regressions for each decile...")
+
+    results = []
+
+    for weighting in ["equal", "value"]:
+        for decile in range(1, 11):
+            sub_df = decile_df[decile_df['decile'] == decile].copy()
+            sub_df = sub_df.merge(proc_df[['permno', 'crsp_date', 'ret', 'prc', 'shrout']], 
+                                  on=['permno', 'crsp_date'], how='left')
+            sub_df['ME'] = np.abs(sub_df['prc']) * sub_df['shrout']
+            sub_df = sub_df[sub_df['ret'].notna() & sub_df['ME'].notna()]
+            
+            if sub_df.empty:
+                print(f"⚠️ Skipping decile {decile} ({weighting}) — no data for regression.")
+                continue
+
+            if weighting == "equal":
+                ret_series = sub_df.groupby('crsp_date')['ret'].mean()
+            else:
+                ret_series = sub_df.groupby('crsp_date').apply(
+                    lambda x: np.average(x['ret'], weights=x['ME']) if len(x) >= 5 else np.nan
+                )
+
+            # Drop NaNs and reset index
+            ret_series.name = 'ret'
+            ret_df = ret_series.dropna().reset_index()
+
+            # Rename index to crsp_date if needed
+            if 'index' in ret_df.columns:
+                ret_df.rename(columns={'index': 'crsp_date'}, inplace=True)
+
+            # Check for crsp_date existence
+            if 'crsp_date' not in ret_df.columns:
+                print(f"❌ Failed: crsp_date column not found in return data for decile {decile} ({weighting})")
+                continue
+
+            # Merge with FF factors
+            merged = pd.merge(ret_df, ff_df, left_on='crsp_date', right_on='date', how='inner')
+            if 'rf' not in merged.columns:
+                print("❌ Missing risk-free rate in FF data.")
+                continue
+
+            merged['ga_factor_excess'] = merged['ret'] - merged['rf']
+
+            X = sm.add_constant(merged[['mkt_rf']], has_constant='add')
+            y = merged['ga_factor_excess']
+            model = sm.OLS(y, X, missing='drop').fit(cov_type='HAC', cov_kwds={'maxlags': 3})
+
+            results.append({
+                'Decile': decile,
+                'Weighting': weighting,
+                'Alpha (annualized)': model.params.get('const', np.nan) * 12,
+                'Alpha p-value': model.pvalues.get('const', np.nan),
+                'R-squared': model.rsquared
+            })
+
+    if not results:
+        print(f"⚠️ No decile alpha regressions completed for {ga_choice}")
+        return
+
+    results_df = pd.DataFrame(results)
+    filepath = os.path.join(output_dir, f"decile_alpha_regressions_{ga_choice}.xlsx")
+    results_df.to_excel(filepath, index=False)
+    print(f"✅ Saved decile alpha regressions: {filepath}")
+
+
+
 ########################################
 ### Industry Analysis ###
 ########################################
@@ -317,10 +410,13 @@ def main(ga_choice="goodwill_to_sales_lagged", industries=None):
         decile_analysis(proc_df, decile_df, ga_choice=ga_choice)
         ga_factor_diagnostics(proc_df, ff_df, ga_factors_df, ga_choice=ga_choice)
         industry_analysis(proc_df, decile_df, ff_df, ga_choice=ga_choice, industries=industries)
+        market_return_reference_plot(ff_df)  # NEW
+        decile_alpha_regressions(proc_df, decile_df, ff_df, ga_choice=ga_choice)  # NEW
         print(f"🎉 All {ga_choice} outputs generated!")
     except Exception as e:
         print(f"❌ Failed: {e}")
         raise
+
 
 if __name__ == "__main__":
     main(ga_choice="goodwill_to_sales_lagged")

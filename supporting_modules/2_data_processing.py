@@ -103,7 +103,7 @@ def apply_filters(df):
     df['zero_streak'] = df.groupby('permno')['ret'].apply(
         lambda x: (x == 0).astype(int).groupby((x != 0).cumsum()).cumsum()
     ).reset_index(drop=True)
-    df = df[df['zero_streak'] < 6]
+    df = df[df['zero_streak'] < 12]
     print(f"After zero return filter: {df.shape[0]} rows")
     
     # Backfill prc before computing market cap
@@ -119,7 +119,7 @@ def apply_filters(df):
     # Size filter (market_cap > 5th percentile)
     df['market_cap_roll'] = df.groupby('permno')['market_cap'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
     df['market_cap_percentile'] = df.groupby('crsp_date')['market_cap_roll'].rank(pct=True)
-    df = df[df['market_cap_percentile'] > 0.05]
+    df = df[df['market_cap_percentile'] > 0.01]
     print(f"After market_cap filter: {df.shape[0]} rows")
     
     # Penny stock filter
@@ -151,13 +151,14 @@ def compute_goodwill_factors(df):
     df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(1)
     # Replace inf with NaN
     for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
-                'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
+            'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
-    # Winsorize non-lagged GA metrics
-    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
-                'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
+
+    # ✅ Winsorize only contemporaneous GA metrics
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']:
         lower, upper = df[col].quantile([0.01, 0.99])
         df[col] = df[col].clip(lower, upper)
+
 
     print("📊 Goodwill Factor Summary:")
     print(df[['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']].describe())

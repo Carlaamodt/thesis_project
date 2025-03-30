@@ -4,15 +4,18 @@ import statsmodels.api as sm
 import numpy as np
 import logging
 
-#########################
-### Load Factor Data ###
-#########################
-import logging
+EXPORT_LATEX = True  # Toggle LaTeX export on/off
 
-# Setup logging
+#########################
+### Setup Logging ###
+#########################
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
+#########################
+### Load Factor Data ###
+#########################
 
 def load_data():
     """Loads monthly GA factor returns and WRDS-downloaded Fama-French factors (in decimals)."""
@@ -55,7 +58,6 @@ def load_data():
     print("✅ Fama-French factor date range:", ff_factors.index.min(), "to", ff_factors.index.max())
     return ga_factor, ff_factors
 
-
 #############################
 ### Merge and Prepare Data ###
 #############################
@@ -86,18 +88,22 @@ def merge_data(ga_factor, ff_factors):
 def run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group):
     """Runs factor regressions for GA factor returns with Newey-West robust standard errors and annualized alpha."""
     print(f"📊 Running factor regressions for {weighting}-weighted {ga_choice} factor (Size: {size_group})...")
+    date_range = f"{df.index.min().strftime('%Y-%m')} to {df.index.max().strftime('%Y-%m')}"
+    logger.info(f"Regression date range: {date_range}")
 
-    # Compute GA factor excess returns
-    # Log the raw GA factor BEFORE subtracting rf
+    # Compute GA factor excess returns directly in df
     logger.info(f"Running diagnostics for {ga_factor_column} (raw GA factor)")
     print("📊 Raw GA factor return summary:\n", df[ga_factor_column].describe())
     print(f"❓ Missing: {df[ga_factor_column].isna().sum()} / {len(df)} rows")
 
-    # Then proceed as usual
+    # Check if 'rf' exists and compute excess returns
+    if 'rf' not in df.columns:
+        logger.error("Risk-free rate 'rf' not found in dataset!")
+        return None
     df['ga_factor_excess'] = df[ga_factor_column] - df['rf']
+
     print("📈 GA factor excess return summary:\n", df['ga_factor_excess'].describe())
     logger.info("Newey-West standard errors using maxlags=3")
-
 
     # Skip if mostly NaNs
     if df['ga_factor_excess'].isna().mean() > 0.5:
@@ -120,6 +126,9 @@ def run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group):
 
         # Filter for available factors
         available_factors = [f for f in factor_list if f in df.columns]
+        if not available_factors:
+            logger.warning(f"No factors available for {model_name}")
+            continue
 
         # Regression setup
         X = sm.add_constant(df[available_factors], has_constant='add')
@@ -137,7 +146,7 @@ def run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group):
             'Model': model_name,
             'Weighting': weighting,
             'Size Group': size_group,
-            'GA Choice': ga_choice,  # Use the actual metric name
+            'GA Choice': ga_choice,
             'Alpha (const)': alpha_monthly,
             'Alpha (annualized)': alpha_annualized,
             'Alpha p-value (HAC)': model.pvalues.get('const', np.nan),
@@ -157,6 +166,22 @@ def run_factor_models(df, ga_factor_column, ga_choice, weighting, size_group):
 
         # Log model summary for review
         logger.info(f"{model_name} Regression Results ({weighting}-weighted {ga_choice}, Size: {size_group}) with Newey-West HAC SE:\n{model.summary()}")
+
+        if EXPORT_LATEX:
+            latex_dir = os.path.join("output", "latex")
+            os.makedirs(latex_dir, exist_ok=True)
+            latex_path = os.path.join(
+                latex_dir,
+                f"{ga_choice}_{weighting}_{size_group}_{model_name.replace(' ', '_')}.tex"
+            )
+            try:
+                from statsmodels.iolib.summary2 import summary_col
+                summary = summary_col([model], stars=True, model_names=[model_name])
+                with open(latex_path, "w") as f:
+                    f.write(summary.as_latex())
+                logger.info(f"📄 Exported LaTeX table to {latex_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to export LaTeX for {ga_choice}, {model_name}: {e}")
 
     return pd.DataFrame(all_results)
 

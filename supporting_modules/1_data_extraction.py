@@ -15,7 +15,7 @@ compustat = conn.raw_sql("""
                     select gvkey, datadate AS date, pstkl, pstkrv, pstk, fyear, 
                     at, lt, ceq, seq, mib, revt, cogs, xsga, xint, dp, ebit, 
                     txditc, txdb, itcb, txdi, csho, act, lct, che, dlc,
-                    txc, xido, ib, pi, wcap, gdwl, GDWLIP, naicsh, sich
+                    txc, xido, ib, pi, wcap, gdwl, gdwlip, naicsh, sich, mkvalt, oiadp
                     from comp.funda
                     where indfmt = 'INDL'
                     and datafmt = 'STD'
@@ -63,9 +63,11 @@ ib:       Income Before Extraordinary Items and Discontinued Operations)
 pi:       Pre-tax Income
 wcap:     Working Capital
 gdwl:     Goodwill
-GDWLIP:   Goodwill and Impairment
+gdwlip:   Goodwill and Impairment
 naicsh:   North American Industry Classification System
 sich:     Standard Industrial Classification Code
+mkvalt:   Market Value of Total Assets
+oiadp:   Operating Income After Depreciation
 
 Sourcing criteria:
 indfmt: Format of company reports (Industrial, INDL, or Financial Services, FS)
