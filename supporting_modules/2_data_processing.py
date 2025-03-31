@@ -71,11 +71,16 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
     
-    # Compustat FF_year: Use for next year's portfolio
+    # Compustat FF_year: Align with portfolio year, June goes to next year
     compustat['compustat_year'] = compustat['compustat_date'].dt.year
-    compustat['FF_year'] = compustat['compustat_year'] + 2  # e.g., 6/30/2006 -> 2008
-    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthBegin(1)  # Jan t-1
-    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthEnd(12)  # Dec t-1
+    compustat['compustat_month'] = compustat['compustat_date'].dt.month
+    compustat['FF_year'] = np.where(
+        compustat['compustat_month'] == 6,
+        compustat['compustat_year'] + 2,  # June t -> t+2 (e.g., 6/30/2006 -> 2008)
+        compustat['compustat_year'] + 1   # Jan-May, Jul-Dec t -> t+1 (e.g., 12/31/2005 -> 2006)
+    )
+    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2 if compustat['compustat_month'] == 6 else compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthBegin(1)
+    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 2 if compustat['compustat_month'] == 6 else compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthEnd(12)
     compustat = compustat[(compustat['compustat_date'] >= compustat['min_date']) & 
                           (compustat['compustat_date'] <= compustat['max_date'])]
     print("Sample FF_year assignments:")
@@ -95,7 +100,6 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     merged = pd.merge(crsp_ret, compustat, on=['permno', 'FF_year'], how='inner')
     print(f"✅ Merged dataset shape: {merged.shape}")
     return merged
-
 ##################################
 ### 3. Apply Filtering Rules
 ##################################
