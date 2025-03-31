@@ -156,9 +156,9 @@ def compute_goodwill_factors(df):
     df['goodwill_to_sales'] = df['gdwl'] / df['revt']
     df['goodwill_to_equity'] = df['gdwl'] / df['ceq']
     df['goodwill_to_market_cap'] = df['gdwl'] / df['market_cap']
-    df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(1)
-    df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(1)
-    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(1)
+    df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(0)
+    df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(0)
+    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(0)
     
     for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
                 'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
