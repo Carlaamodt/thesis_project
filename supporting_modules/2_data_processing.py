@@ -71,15 +71,16 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
     
-    # Compustat FF_year: Map to t+2 for June-end data
+    # Compustat FF_year: Next portfolio formation
     compustat['compustat_year'] = compustat['compustat_date'].dt.year
-    compustat['compustat_month'] = compustat['compustat_date'].dt.month
-    compustat['FF_year'] = compustat['compustat_year'] + 2  # e.g., 6/30/2005 -> 2007, 6/30/2006 -> 2008
-    compustat['target_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthEnd(6)  # Exact 6/30
-    compustat = compustat[compustat['compustat_date'] == compustat['target_date']]  # Only keep exact June date
+    compustat['FF_year'] = compustat['compustat_year'] + 2  # e.g., 6/30/2006 -> 2008
+    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthBegin(7)
+    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthEnd(6)
+    compustat = compustat[(compustat['compustat_date'] >= compustat['min_date']) & 
+                          (compustat['compustat_date'] <= compustat['max_date'])]
     print("Sample FF_year assignments:")
-    print(compustat[['compustat_date', 'FF_year', 'target_date']].head(5))
-    print(f"Compustat after FF date filter: {compustat.shape[0]} rows")
+    print(compustat[['compustat_date', 'FF_year', 'min_date', 'max_date']].head(5))
+    print(f"Compustat after FF date range filter: {compustat.shape[0]} rows")
     
     compustat = compustat.sort_values(['gvkey', 'compustat_date']).groupby(['gvkey', 'FF_year']).tail(1)
     print(f"Compustat after keeping latest per gvkey, FF_year: {compustat.shape[0]} rows")
