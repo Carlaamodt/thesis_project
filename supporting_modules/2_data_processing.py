@@ -48,7 +48,6 @@ def load_data(directory="data/"):
 
 def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     print("🔄 Merging datasets for 2002–2023 with FF 6-month lag flexibility...")
-    # Filter link table
     crsp_compustat = crsp_compustat[
         crsp_compustat['linktype'].isin(['LU', 'LC', 'LN']) &
         crsp_compustat['linkprim'].isin(['P', 'C']) &
@@ -57,7 +56,6 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     crsp_compustat['linkenddt'] = crsp_compustat['linkenddt'].fillna(pd.Timestamp('2023-12-31'))
     print(f"Filtered link table rows: {crsp_compustat.shape[0]}, unique gvkey: {crsp_compustat['gvkey'].nunique()}")
     
-    # Merge Compustat with link table
     compustat = pd.merge(compustat, crsp_compustat, on='gvkey', how='inner')
     print(f"Compustat after link merge: {compustat.shape[0]} rows")
     date_col = 'date' if 'date' in compustat.columns else 'datadate'
@@ -69,20 +67,14 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     ].drop_duplicates(subset=['gvkey', date_col]).rename(columns={date_col: 'compustat_date'})
     print(f"Compustat after link date filter and dedupe: {compustat.shape[0]} rows")
     
-    # CRSP FF_year: July t to June t+1 = t+1
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
     
-    # Compustat FF_year: Map to portfolio year correctly
     compustat['compustat_year'] = compustat['compustat_date'].dt.year
     compustat['compustat_month'] = compustat['compustat_date'].dt.month
-    compustat['FF_year'] = np.where(
-        compustat['compustat_month'] <= 6,
-        compustat['compustat_year'] + 1,  # e.g., 5/31/2012 -> 2013
-        compustat['compustat_year'] + 2   # e.g., 12/31/2012 -> 2014
-    )
+    compustat['FF_year'] = compustat['compustat_year'] + 2  # All map to t+2
     compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthBegin(7)
-    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthEnd(6)
+    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthEnd(12)
     print("Sample FF_year assignments:")
     print(compustat[['compustat_date', 'FF_year', 'min_date', 'max_date']].head(5))
     compustat = compustat[(compustat['compustat_date'] >= compustat['min_date']) & 
@@ -92,7 +84,6 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     compustat = compustat.sort_values(['gvkey', 'compustat_date']).groupby(['gvkey', 'FF_year']).tail(1)
     print(f"Compustat after keeping latest per gvkey, FF_year: {compustat.shape[0]} rows")
     
-    # CRSP dedupe
     dupes = crsp_ret.duplicated(subset=['permno', 'crsp_date'], keep=False)
     if dupes.sum() > 0:
         print(f"⚠️ Warning: Found {dupes.sum()} duplicate rows in CRSP returns.")
