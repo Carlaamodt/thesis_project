@@ -46,6 +46,8 @@ def load_data(directory="data/"):
 ### 2. Clean and Merge COMPUSTAT & CRSP
 ##################################
 
+from pandas.tseries.offsets import YearEnd, MonthEnd
+
 def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     print("🔄 Merging datasets for 2002–2023 with FF 6-month lag...")
     crsp_compustat = crsp_compustat[
@@ -71,21 +73,20 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
     
-    # Compustat FF_year: Align with portfolio year, June goes to next year
-    compustat['compustat_year'] = compustat['compustat_date'].dt.year
-    compustat['compustat_month'] = compustat['compustat_date'].dt.month
-    compustat['FF_year'] = np.where(
-        compustat['compustat_month'] == 6,
-        compustat['compustat_year'] + 2,  # June t -> t+2 (e.g., 6/30/2006 -> 2008)
-        compustat['compustat_year'] + 1   # Jan-May, Jul-Dec t -> t+1 (e.g., 12/31/2005 -> 2006)
-    )
-    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2 if compustat['compustat_month'] == 6 else compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthBegin(1)
-    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 2 if compustat['compustat_month'] == 6 else compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthEnd(12)
-    compustat = compustat[(compustat['compustat_date'] >= compustat['min_date']) & 
-                          (compustat['compustat_date'] <= compustat['max_date'])]
+    # Compustat FF_year: June scheme alignment
+    def JuneScheme(row):
+        date = row['compustat_date']
+        if date.month < 4:  # Jan-Mar t -> June t
+            month_end = date + YearEnd(0) + MonthEnd(-6)
+        else:  # Apr-Dec t -> June t+1
+            month_end = date + YearEnd(0) + MonthEnd(6)
+        return pd.Series({'month_end': month_end})
+    
+    compustat[['month_end']] = compustat.apply(JuneScheme, axis=1)
+    compustat['FF_year'] = compustat['month_end'].dt.year + 1  # June t -> July t to June t+1
     print("Sample FF_year assignments:")
-    print(compustat[['compustat_date', 'FF_year', 'min_date', 'max_date']].head(5))
-    print(f"Compustat after FF date range filter: {compustat.shape[0]} rows")
+    print(compustat[['compustat_date', 'month_end', 'FF_year']].head(5))
+    print(f"Compustat after FF date assignment: {compustat.shape[0]} rows")
     
     compustat = compustat.sort_values(['gvkey', 'compustat_date']).groupby(['gvkey', 'FF_year']).tail(1)
     print(f"Compustat after keeping latest per gvkey, FF_year: {compustat.shape[0]} rows")
@@ -100,6 +101,7 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     merged = pd.merge(crsp_ret, compustat, on=['permno', 'FF_year'], how='inner')
     print(f"✅ Merged dataset shape: {merged.shape}")
     return merged
+
 ##################################
 ### 3. Apply Filtering Rules
 ##################################
