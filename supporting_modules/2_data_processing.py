@@ -71,11 +71,11 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     crsp_ret['FF_year'] = crsp_ret['date'].dt.year + np.where(crsp_ret['date'].dt.month >= 7, 1, 0)
     crsp_ret = crsp_ret.rename(columns={'date': 'crsp_date'})
     
-    # Compustat FF_year: Next portfolio formation
+    # Compustat FF_year: Use for next year's portfolio
     compustat['compustat_year'] = compustat['compustat_date'].dt.year
     compustat['FF_year'] = compustat['compustat_year'] + 2  # e.g., 6/30/2006 -> 2008
-    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthBegin(7)
-    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 1, format='%Y') + pd.offsets.MonthEnd(6)
+    compustat['min_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthBegin(1)  # Jan t-1
+    compustat['max_date'] = pd.to_datetime(compustat['FF_year'] - 2, format='%Y') + pd.offsets.MonthEnd(12)  # Dec t-1
     compustat = compustat[(compustat['compustat_date'] >= compustat['min_date']) & 
                           (compustat['compustat_date'] <= compustat['max_date'])]
     print("Sample FF_year assignments:")
