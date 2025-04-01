@@ -114,18 +114,34 @@ def apply_filters(df):
     df = df.groupby('permno').filter(lambda x: len(x) >= 12)
     print(f"After min obs filter: {df.shape[0]} rows")
     
-    df = df[(df['at'] > 0) & (df['gdwl'].notna()) & (df['ceq'] > 0)]
-    print(f"After positive assets, goodwill, equity filter: {df.shape[0]} rows")
+    initial_permnos = df['permno'].nunique()
+    print(f"Starting unique permnos: {initial_permnos}")
     
-    df['zero_streak'] = df.groupby('permno')['ret'].apply(
+    df_at = df[df['at'] > 0]
+    at_dropped = initial_permnos - df_at['permno'].nunique()
+    print(f"After positive assets filter: {df_at.shape[0]} rows, dropped {at_dropped} companies")
+    
+    df_ceq = df_at[df_at['ceq'] > 0]
+    ceq_dropped = df_at['permno'].nunique() - df_ceq['permno'].nunique()
+    print(f"After positive equity filter: {df_ceq.shape[0]} rows, dropped {ceq_dropped} companies")
+    
+    df_gdwl = df_ceq[df_ceq['gdwl'] > 0]
+    gdwl_dropped = df_ceq['permno'].nunique() - df_gdwl['permno'].nunique()
+    print(f"After positive goodwill filter: {df_gdwl.shape[0]} rows, dropped {gdwl_dropped} companies")
+    
+    # Work on a copy to avoid slice issues
+    df = df_gdwl.copy()
+    
+    df.loc[:, 'zero_streak'] = df.groupby('permno')['ret'].apply(
         lambda x: (x == 0).astype(int).groupby((x != 0).cumsum()).cumsum()
     ).reset_index(drop=True)
+    df.loc[:, 'prc'] = df.groupby('permno')['prc'].ffill()
+    df.loc[:, 'market_cap'] = df['shrout'] * df['prc'].abs()
+    df.loc[:, 'is_nyse'] = (df['exchcd'] == 1).astype(int)
+    
     df = df[df['zero_streak'] < 12]
     print(f"After zero return filter: {df.shape[0]} rows")
     
-    df['prc'] = df.groupby('permno')['prc'].ffill()
-    df['market_cap'] = df['shrout'] * df['prc'].abs()
-    df['is_nyse'] = (df['exchcd'] == 1).astype(int)
     df = df[df['market_cap'].notna()]
     print(f"After non-missing market_cap filter: {df.shape[0]} rows")
     

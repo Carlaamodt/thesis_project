@@ -4,7 +4,7 @@ import statsmodels.api as sm
 import numpy as np
 import logging
 
-EXPORT_LATEX = True  # Toggle LaTeX export on/off
+EXPORT_LATEX = False  # Toggle LaTeX export on/off
 
 #########################
 ### Setup Logging ###
