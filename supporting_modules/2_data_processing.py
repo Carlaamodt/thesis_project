@@ -129,7 +129,6 @@ def apply_filters(df):
     gdwl_dropped = df_ceq['permno'].nunique() - df_gdwl['permno'].nunique()
     print(f"After positive goodwill filter: {df_gdwl.shape[0]} rows, dropped {gdwl_dropped} companies")
     
-    # Work on a copy to avoid slice issues
     df = df_gdwl.copy()
     
     df.loc[:, 'zero_streak'] = df.groupby('permno')['ret'].apply(
