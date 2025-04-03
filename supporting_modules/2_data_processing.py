@@ -138,7 +138,7 @@ def apply_filters(df):
     df.loc[:, 'market_cap'] = df['shrout'] * df['prc'].abs()
     df.loc[:, 'is_nyse'] = (df['exchcd'] == 1).astype(int)
     
-    df = df[df['zero_streak'] < 12]
+    df = df[df['zero_streak'] < 6]
     print(f"After zero return filter: {df.shape[0]} rows")
     
     df = df[df['market_cap'].notna()]
