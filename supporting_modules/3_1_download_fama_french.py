@@ -1,6 +1,8 @@
 import pandas as pd
 import wrds
 import os
+import matplotlib.pyplot as plt
+
 
 print("🔗 Connecting to WRDS...")
 conn = wrds.Connection(wrds_username="carlaamodt")
@@ -53,6 +55,19 @@ print(ff_factors[factor_cols].isnull().sum())
 print(f"\n🗓️ Date range: {ff_factors['date'].min().date()} → {ff_factors['date'].max().date()}")
 print("\n📈 Summary stats:")
 print(ff_factors[factor_cols].describe())
+# Quick plot to visually inspect market risk premium
+
+ff_factors['mkt_rf_roll12'] = ff_factors['mkt_rf'].rolling(window=12).mean()
+
+plt.figure(figsize=(10, 5))
+plt.plot(ff_factors['date'], ff_factors['mkt_rf_roll12'], label='12-mo Rolling Mean: MKT_RF')
+plt.axhline(0, color='gray', linestyle='--')
+plt.title('Rolling 12-Month Average of MKT_RF')
+plt.xlabel('Date')
+plt.ylabel('MKT_RF (12-mo Avg)')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
 # Save clean file
 output_path = os.path.join("data", "FamaFrench_factors_with_momentum.csv")

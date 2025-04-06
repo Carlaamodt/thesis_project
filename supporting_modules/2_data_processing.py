@@ -146,6 +146,7 @@ def apply_filters(df):
     
     df['market_cap_roll'] = df.groupby('permno')['market_cap'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
     df['market_cap_percentile'] = df.groupby('crsp_date')['market_cap_roll'].rank(pct=True)
+   
     df = df[df['market_cap_percentile'] > 0.005]
     print(f"After market_cap filter: {df.shape[0]} rows")
     
@@ -154,7 +155,7 @@ def apply_filters(df):
     print(f"After penny stock filter: {df.shape[0]} rows")
     
     df['avg_vol'] = df.groupby('permno')['vol'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
-    df = df[df['vol'] >= 0.05 * df['avg_vol']]
+    df = df[df['vol'] >= 0.01 * df['avg_vol']]
     print(f"After volume filter: {df.shape[0]} rows")
     
     print(f"✅ Filtering completed. Final shape: {df.shape}")
@@ -166,23 +167,29 @@ def apply_filters(df):
 
 def compute_goodwill_factors(df):
     print("📊 Computing Goodwill factors...")
+
+    # 1. Raw ratios
     df['goodwill_to_sales'] = df['gdwl'] / df['revt']
     df['goodwill_to_equity'] = df['gdwl'] / df['ceq']
     df['goodwill_to_market_cap'] = df['gdwl'] / df['market_cap']
-    df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(0)
-    df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(0)
-    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(0)
-    
-    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap',
-                'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']:
+
+    # 2. Replace inf/-inf with NaN
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
-    
+
+    # ✅ 3. Winsorize BEFORE lagging
     for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']:
         lower, upper = df[col].quantile([0.01, 0.99])
         df[col] = df[col].clip(lower, upper)
-    
+
+    # 4. Then create lagged variables
+    df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(0)
+    df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(0)
+    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(0)
+
     print("📊 Goodwill Factor Summary:")
     print(df[['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']].describe())
+
     return df
 
 ##################################
@@ -201,13 +208,26 @@ def adjust_for_delistings(df, crsp_delist):
     return df
 
 ##################################
-### 6. Winsorize Returns
+### 6. Winsorize Returns with Diagnostics
 ##################################
 
-def winsorize_and_filter(df):
-    print("📊 Winsorizing returns (1%-99%)...")
-    lower, upper = df['ret'].quantile([0.01, 0.99])
+def winsorize_and_filter_with_diagnostics(df):
+    print("📊 Winsorizing returns (0.5%-99.5%)...")
+
+    # Get bounds
+    lower, upper = df['ret'].quantile([0.005, 0.995])
+
+    # Diagnostic counts
+    below = (df['ret'] < lower).sum()
+    above = (df['ret'] > upper).sum()
+
+    print(f"🔻 Values below 1st percentile (clipped): {below}")
+    print(f"🔺 Values above 99th percentile (clipped): {above}")
+    print(f"🧮 Total values clipped: {below + above}")
+
+    # Apply winsorization
     df['ret'] = df['ret'].clip(lower, upper)
+
     return df
 
 ##################################
@@ -233,7 +253,7 @@ def main():
         filtered = apply_filters(merged)
         goodwill_factors = compute_goodwill_factors(filtered)
         delist_adjusted = adjust_for_delistings(goodwill_factors, crsp_delist)
-        winsorized_data = winsorize_and_filter(delist_adjusted)
+        winsorized_data = winsorize_and_filter_with_diagnostics(delist_adjusted)
         save_processed_data(winsorized_data)
         print("✅ Full pipeline completed successfully!")
     except Exception as e:

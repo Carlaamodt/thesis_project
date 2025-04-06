@@ -5,6 +5,8 @@ import logging
 import argparse
 import math
 from typing import Tuple, Optional, Union
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -236,24 +238,6 @@ def count_firms_per_year(df: pd.DataFrame, ga_column: str) -> pd.DataFrame:
     
     return firm_counts
 
-def compute_annualized_sharpe(series: pd.Series) -> Tuple[float, float, float]:
-    """
-    Compute the annualized Sharpe ratio, mean return, and standard deviation for a series.
-    
-    Args:
-        series (pd.Series): Time series of returns.
-    
-    Returns:
-        tuple: (Sharpe ratio, annualized mean return, annualized standard deviation)
-    """
-    series = series.dropna()
-    if len(series) < 12:  # Require at least 1 year of data
-        return np.nan, np.nan, np.nan
-    mean_return = series.mean() * 12
-    std_dev = series.std() * math.sqrt(12)
-    sharpe = mean_return / std_dev if std_dev > 0 else np.nan
-    return round(sharpe, 4), round(mean_return, 4), round(std_dev, 4)
-
 def main(filepath: str) -> None:
     """
     Main function to construct GA factors and save results.
@@ -318,6 +302,9 @@ def main(filepath: str) -> None:
                 df[(df['crsp_date'].dt.year == year + 1) & (df['crsp_date'].dt.month <= 6)]
             ])
             year_df['decile'] = assign_deciles(year_df[ga_metric], breakpoints)
+            # ✅ Optional: Log avg GA per decile for diagnostics
+            decile_summary = year_df.groupby('decile')[ga_metric].mean()
+            logger.info(f"Year {year} avg {ga_metric} per decile:\n{decile_summary}")
             
             # Save decile assignments
             decile_assignments.append(year_df[['permno', 'crsp_date', 'decile']])
@@ -441,29 +428,6 @@ def main(filepath: str) -> None:
         output_path = f'output/factors/{ga_metric}_factors.csv'
         final_df.to_csv(output_path, index=False)
         logger.info(f"Saved factors to {output_path}")
-        
-        # Compute and save Sharpe ratios
-        sharpe_results = []
-        print(f"\n📈 Sharpe Ratios for {ga_metric}")
-        print("---------------------------------------")
-        for col in final_df.columns:
-            if col.startswith("ga_factor") or col.startswith("factor_"):
-                sharpe, mean_ret, std_ret = compute_annualized_sharpe(final_df[col])
-                print(f"{col:<25} | Sharpe: {sharpe:<6} | Mean: {mean_ret:<6} | Std: {std_ret:<6}")
-                sharpe_results.append({
-                    'factor': col,
-                    'sharpe': sharpe,
-                    'mean_return': mean_ret,
-                    'std_dev': std_ret
-                })
-        
-        sharpe_df = pd.DataFrame(sharpe_results)
-        os.makedirs('output/sharpe', exist_ok=True)
-        sharpe_path = f'output/sharpe/{ga_metric}_sharpe.csv'
-        sharpe_df.to_csv(sharpe_path, index=False)
-        logger.info(f"Saved Sharpe ratios to {sharpe_path}")
-    
-    logger.info("Factor construction complete!")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Construct GA factors from processed data.")
