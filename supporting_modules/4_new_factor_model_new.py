@@ -20,7 +20,7 @@ def compute_annualized_sharpe(series: pd.Series) -> tuple:
     Compute the annualized Sharpe ratio, mean return, and standard deviation for a series.
     
     Args:
-        series (pd.Series): Time series of excess returns.
+        series (pd.Series): Time series of excess returns (or raw returns for hedge portfolios).
     
     Returns:
         tuple: (Sharpe ratio, annualized mean return, annualized standard deviation)
@@ -32,7 +32,7 @@ def compute_annualized_sharpe(series: pd.Series) -> tuple:
     mean_return = series.mean() * 12
     std_dev = series.std() * np.sqrt(12)
     sharpe = mean_return / std_dev if std_dev > 0 else np.nan
-    return round(sharpe, 4), round(mean_return, 4), round(std_dev, 4)  # Fixed mean_ret to mean_return
+    return round(sharpe, 4), round(mean_return, 4), round(std_dev, 4)
 
 # ----------------------------
 # Load Fama-French Factors
@@ -65,13 +65,15 @@ def run_factor_models(df, column, ga_choice, weighting, size_group, is_hedge=Fal
     logger.info(f"Running regression for {column} (GA: {ga_choice}, Weighting: {weighting}, Size: {size_group})")
     print(f"📊 Running regressions for {column}...")
 
-    # Compute excess returns
+    # Compute the dependent variable for regression
     if is_hedge:
+        # For hedge portfolios (e.g., ga_factor_ew = D1 - D10), use the raw spread as the dependent variable
+        df['ga_excess'] = df[column]
+        print(f"📈 Hedge portfolio spread summary for {column}:\n{df['ga_excess'].describe()}")
+    else:
+        # For individual portfolios (e.g., single_d1_ew), compute excess return by subtracting rf
         df['ga_excess'] = df[column] - df['rf']
         print(f"📈 Excess return summary for {column}:\n{df['ga_excess'].describe()}")
-    else:
-        df['ga_excess'] = df[column]  # No rf deduction for individual portfolios
-        print(f"📈 Raw return summary for {column}:\n{df['ga_excess'].describe()}")
 
     if df['ga_excess'].isna().mean() > 0.5:
         logger.warning(f"Too many NaNs in {column}. Skipping.")
@@ -187,12 +189,16 @@ def process_ga_file(filepath, ff_factors, ga_choice):
                 size_group = "sizeadj"
             else:
                 size_group = "all"
+            # Log the number of non-missing observations
+            non_missing_count = merged[col].notna().sum()
+            logger.info(f"Portfolio {col} (GA: {ga_choice}, Weighting: {weighting}, Size: {size_group}) has {non_missing_count} non-missing observations out of {len(merged)}")
+            print(f"ℹ️ Portfolio {col}: {non_missing_count} non-missing observations out of {len(merged)}")
             # Run regressions
             model_df = run_factor_models(merged.copy(), col, ga_choice, weighting, size_group, is_hedge=True)
             if model_df is not None:
                 results.append(model_df)
-            # Compute Sharpe ratio for excess returns
-            merged['ga_excess'] = merged[col] - merged['rf']
+            # Compute Sharpe ratio for the hedge portfolio (use raw spread as excess return)
+            merged['ga_excess'] = merged[col]  # No rf subtraction for hedge portfolios
             sharpe, mean_ret, std_ret = compute_annualized_sharpe(merged['ga_excess'])
             sharpe_results.append({
                 'Portfolio': col,
@@ -205,9 +211,13 @@ def process_ga_file(filepath, ff_factors, ga_choice):
             })
 
         elif col.startswith("single_d1") or col.startswith("single_d10") or col.startswith("d1") or col.startswith("d10"):
-            # Individual portfolios: do NOT subtract RF
+            # Individual portfolios
             weighting = "ew" if "ew" in col else "vw"
             size_group = "small" if "small" in col else "big" if "big" in col else "all"
+            # Log the number of non-missing observations
+            non_missing_count = merged[col].notna().sum()
+            logger.info(f"Portfolio {col} (GA: {ga_choice}, Weighting: {weighting}, Size: {size_group}) has {non_missing_count} non-missing observations out of {len(merged)}")
+            print(f"ℹ️ Portfolio {col}: {non_missing_count} non-missing observations out of {len(merged)}")
             model_df = run_factor_models(merged.copy(), col, ga_choice, weighting, size_group, is_hedge=False)
             if model_df is not None:
                 results.append(model_df)
