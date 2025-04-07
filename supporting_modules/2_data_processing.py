@@ -182,7 +182,7 @@ def compute_goodwill_factors(df):
         lower, upper = df[col].quantile([0.01, 0.99])
         df[col] = df[col].clip(lower, upper)
 
-    # 4. Then create lagged variables
+    # 4. Then create lagged variables, on purpose shift(0)
     df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(0)
     df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(0)
     df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(0)
@@ -196,16 +196,58 @@ def compute_goodwill_factors(df):
 ### 5. Adjust for Delistings
 ##################################
 
-def adjust_for_delistings(df, crsp_delist):
+def adjust_for_delistings(df, crsp_delist, filter_distress=True):
     print("⚠️ Adjusting for delisting returns...")
+
+    # Inspect the distribution of delisting codes and returns
+    print("Delisting Code Distribution (Before Filtering):")
+    print(crsp_delist['dlstcd'].value_counts().sort_index())
+    print("\nDelisting Return Statistics by Code (Before Filtering):")
+    print(crsp_delist.groupby('dlstcd')['dlret'].describe())
+
+    # Filter delistings to only bad ones (400–599) if filter_distress is True
+    if filter_distress:
+        crsp_delist = crsp_delist[crsp_delist['dlstcd'].between(400, 599)]
+        print("\nKeeping only delist codes 400–599:")
+        print(crsp_delist['dlstcd'].value_counts().sort_index())
+        # Optionally exclude specific codes within 400–599
+        crsp_delist = crsp_delist[crsp_delist['dlstcd'] != 580]
+        print("\nAfter excluding code 580 (if applicable):")
+        print(crsp_delist['dlstcd'].value_counts().sort_index())
+    else:
+        print("\nKeeping all delisting codes.")
+
+    # Align dates to monthly granularity for merge
     df['crsp_date_month'] = df['crsp_date'].dt.to_period('M')
     crsp_delist['dlstdt_month'] = crsp_delist['dlstdt'].dt.to_period('M')
+
+    # Merge with delist data on (permno, month)
     df = pd.merge(df, crsp_delist, left_on=['permno', 'crsp_date_month'], 
                   right_on=['permno', 'dlstdt_month'], how='left')
-    df['ret'] = np.where(df['dlret'].notna(), 
-                         (1 + df['ret'].fillna(0)) * (1 + df['dlret'].fillna(0)) - 1, 
-                         df['ret'])
+
+    # Check the number of cases where ret is NaN but dlret is available
+    print(f"Number of cases where ret is NaN but dlret is available: {(df['ret'].isna() & df['dlret'].notna()).sum()}")
+
+    # Adjust returns for delisting:
+    # - If dlret is available and ret is not NaN, compound ret and dlret
+    # - If dlret is available and ret is NaN, use dlret directly
+    # - Otherwise, keep ret as is
+    df['ret'] = np.where(
+        df['dlret'].notna(),
+        np.where(
+            df['ret'].notna(),
+            (1 + df['ret']) * (1 + df['dlret']) - 1,  # Compound if ret is available
+            df['dlret']  # Use dlret directly if ret is NaN
+        ),
+        df['ret']  # Keep ret if dlret is NaN
+    )
+
+    # Drop temporary columns
+    df = df.drop(columns=['crsp_date_month'], errors='ignore')
+    crsp_delist = crsp_delist.drop(columns=['dlstdt_month'], errors='ignore')
+
     return df
+
 
 ##################################
 ### 6. Winsorize Returns with Diagnostics
