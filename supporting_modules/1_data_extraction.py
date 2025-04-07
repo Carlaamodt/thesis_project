@@ -13,9 +13,8 @@ conn = wrds.Connection(wrds_username = 'carlaamodt')
             
 compustat = conn.raw_sql("""
                     select gvkey, datadate AS date, pstkl, pstkrv, pstk, fyear, 
-                    at, lt, ceq, seq, mib, revt, cogs, xsga, xint, dp, ebit, 
-                    txditc, txdb, itcb, txdi, csho, act, lct, che, dlc,
-                    txc, xido, ib, pi, wcap, gdwl, gdwlip, naicsh, sich, mkvalt, oiadp
+                    at, lt, ceq, seq, mib, revt, dp, ebit, csho, act, lct,
+                    xido, ib, wcap, gdwl, gdwlip, naicsh, sich, mkvalt, oiadp, dltt
                     from comp.funda
                     where indfmt = 'INDL'
                     and datafmt = 'STD'
@@ -43,31 +42,21 @@ ceq:      Book value of common equity
 seq:      Stockholders’ equity
 mib:      Minority Interest
 revt:     Revenue
-cogs:     Cost of Goods Sold
-xsga:     Selling, General and Administrative Expense
-xint:     Interest and Related Expense
 dp:       Depreciation and Amortization
 ebit:     Earnings Before Interest and Related Expense and Tax
-txditc:   Deferred Taxes and Investment Tax Credit (txdb + itcb)
-txdb:     Deferred Taxes (Balance Sheet)
-itcb:     Investment Tax Credit (Balance Sheet)
-txdi:     Deferred Income Taxes
 csho:     Common shares outstanding
 act:      Total Current Assets
 lct:      Total Current Liabilities
-che:      Cash and Short-Term Investments
-dlc:      Total Debt in Current Liabilities
-txc:      Income Taxes - Current
 xido:     Extraordinary Items and Discontinued Operations
 ib:       Income Before Extraordinary Items and Discontinued Operations)
-pi:       Pre-tax Income
 wcap:     Working Capital
 gdwl:     Goodwill
 gdwlip:   Goodwill and Impairment
 naicsh:   North American Industry Classification System
 sich:     Standard Industrial Classification Code
 mkvalt:   Market Value of Total Assets
-oiadp:   Operating Income After Depreciation
+oiadp:    Operating Income After Depreciation
+dltt:     Long-term Debt
 
 Sourcing criteria:
 indfmt: Format of company reports (Industrial, INDL, or Financial Services, FS)
