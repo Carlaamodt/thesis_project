@@ -49,7 +49,7 @@ def load_data(directory="data/"):
 from pandas.tseries.offsets import YearEnd, MonthEnd
 
 def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
-    print("🔄 Merging datasets for 2002–2023 with FF 6-month lag...")
+    print("🔄 Merging datasets for 2003–2023 with FF 6-month lag...")
     crsp_compustat = crsp_compustat[
         crsp_compustat['linktype'].isin(['LU', 'LC', 'LN']) &
         crsp_compustat['linkprim'].isin(['P', 'C']) &
@@ -64,7 +64,7 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
     compustat = compustat[
         (compustat[date_col] >= compustat['linkdt']) & 
         (compustat[date_col] <= compustat['linkenddt']) &
-        (compustat[date_col] >= '2002-01-01') & 
+        (compustat[date_col] >= '2003-01-01') & 
         (compustat[date_col] <= '2023-12-31')
     ].drop_duplicates(subset=['gvkey', date_col]).rename(columns={date_col: 'compustat_date'})
     print(f"Compustat after link date filter and dedupe: {compustat.shape[0]} rows")
