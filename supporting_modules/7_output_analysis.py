@@ -13,7 +13,7 @@ os.makedirs(output_dir, exist_ok=True)
 ### Load Data ###
 ########################################
 
-def load_data(directory="data/", ga_choice="goodwill_to_sales_lagged"):
+def load_data(directory="data/", ga_choice="goodwill_to_equity_lagged"):
     print(f"📥 Loading data for {ga_choice}...")
     
     # Processed data from 2_data_processing.py
