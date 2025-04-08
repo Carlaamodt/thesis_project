@@ -20,7 +20,7 @@ compustat = conn.raw_sql("""
                     and datafmt = 'STD'
                     and popsrc = 'D'
                     and consol = 'C'
-                    and datadate >= '01/01/2003'
+                    and datadate >= '01/01/2002'
                     and datadate < '01/01/2024'
                     order by gvkey, fyear, datadate
                     """, date_cols = ['datadate'])
@@ -83,7 +83,7 @@ crsp_ret = conn.raw_sql("""
                             on a.permno = b.permno
                             and b.namedt <= a.date
                             and a.date <= b.nameendt
-                            where a.date >= '01/01/2003'
+                            where a.date >= '01/01/2002'
                             and a.date < '01/01/2024'
                             and b.exchcd in (1, 2, 3)
                             """, date_cols = ['date']) 
@@ -124,7 +124,7 @@ crsp_delist = conn.raw_sql("""
                           select permno, dlret, dlstdt, dlstcd
                           from crsp.msedelist
                            where dlstdt < '01/01/2024' -- ✅ EXCLUDE delistings dated 2024+
-                            and dlstdt >= '01/01/2003'
+                            and dlstdt >= '01/01/2002'
 
                           """, date_cols = ['dlstdt'])
 

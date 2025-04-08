@@ -10,23 +10,25 @@ print("✅ Connected successfully.")
 
 print("⬇️ Downloading Fama-French 5-factor + Momentum data from WRDS...")
 ff_factors = conn.raw_sql("""
-    SELECT 
-        ff.date, 
-        ff.mktrf AS mkt_rf, 
-        ff.smb, 
-        ff.hml, 
-        ff.rmw, 
-        ff.cma, 
-        fm.umd AS mom,
-        ff.rf
-    FROM ff.fivefactors_monthly AS ff
-    LEFT JOIN ff.factors_monthly AS fm
-    ON ff.date = fm.date
-    WHERE ff.date >= '2003-01-01'
-    AND ff.date <= '2023-12-31'
+SELECT 
+    ff.date, 
+    ff.mktrf AS mkt_rf, 
+    ff.smb, 
+    ff.hml, 
+    ff.rmw, 
+    ff.cma, 
+    fm.umd AS mom,
+    ff.rf
+FROM ff.fivefactors_monthly AS ff
+LEFT JOIN ff.factors_monthly AS fm
+ON ff.date = fm.date
+WHERE ff.date >= '01/01/2002'
 """, date_cols=['date'])
 
 print(f"✅ Data downloaded. Rows: {len(ff_factors)}")
+
+# Filter out future years (e.g. 2024+)
+ff_factors = ff_factors[ff_factors['date'].dt.year < 2024]
 
 # Convert all factor columns to float safely
 factor_cols = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom', 'rf']

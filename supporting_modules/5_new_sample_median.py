@@ -264,7 +264,7 @@ def main(filepath: str) -> None:
     logger.info(f"Size groups assigned:\n{df['size_group'].value_counts(dropna=False)}")
     
     # Apply filters
-    df = df[(df['crsp_date'].dt.year >= 2003) & (df['crsp_date'].dt.year <= 2023)]
+    df = df[(df['crsp_date'].dt.year >= 2004) & (df['crsp_date'].dt.year <= 2023)]
     df = df[df['crsp_date'].dt.month != 6]  # Exclude June per Fama-French
     df = df[df['ret'].notna() & (df['ret'] > -1) & (df['ret'] < 1)]
     logger.info(f"After filters: {len(df)} rows, {df['permno'].nunique()} unique firms")
@@ -291,7 +291,7 @@ def main(filepath: str) -> None:
         decile_assignments = []
         output_data = []
         
-        for year in range(2003, 2024):
+        for year in range(2004, 2024):
             # Get sample breakpoints for this year
             breakpoints = get_sample_decile_breakpoints(df_full[df_full['crsp_date'].dt.year == year], ga_metric, year)
             if breakpoints is None:
