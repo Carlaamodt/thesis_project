@@ -150,10 +150,28 @@ def apply_filters(df):
     df = df[df['market_cap_percentile'] > 0.005]
     print(f"After market_cap filter: {df.shape[0]} rows")
     
+    # Compute the 12-month average price
     df['avg_price'] = df.groupby('permno')['prc'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
-    df = df[df['avg_price'].abs() >= 1]
-    print(f"After penny stock filter: {df.shape[0]} rows")
     
+    # Apply the 12-month average $1 filter (main filter)
+    rows_before_avg = df.shape[0]
+    permnos_before_avg = df['permno'].nunique()
+    df = df[df['avg_price'].abs() >= 1]
+    rows_after_avg = df.shape[0]
+    permnos_after_avg = df['permno'].nunique()
+    print(f"Applied penny stock filter ($1 on 12-month avg price): {df.shape[0]} rows")
+    print(f"Dropped {rows_before_avg - rows_after_avg} rows, {permnos_before_avg - permnos_after_avg} companies due to $1 avg filter")
+    
+    # Test the raw $1 filter (for reporting purposes)
+    rows_before_raw = df.shape[0]
+    permnos_before_raw = df['permno'].nunique()
+    df_raw = df[df['prc'].abs() >= 1]
+    rows_after_raw = df_raw.shape[0]
+    permnos_after_raw = df_raw['permno'].nunique()
+    print(f"Test - After raw $1 penny stock filter: {rows_after_raw} rows")
+    print(f"Dropped {rows_before_raw - rows_after_raw} rows, {permnos_before_raw - permnos_after_raw} companies due to raw $1 filter")
+    
+    # Continue with the volume filter
     df['avg_vol'] = df.groupby('permno')['vol'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
     df = df[df['vol'] >= 0.01 * df['avg_vol']]
     print(f"After volume filter: {df.shape[0]} rows")
