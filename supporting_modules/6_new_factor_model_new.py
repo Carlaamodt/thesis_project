@@ -240,7 +240,7 @@ def main():
     ga_files = {
         "goodwill_to_sales_lagged": "output/factors/goodwill_to_sales_lagged_factors.csv",
         "goodwill_to_equity_lagged": "output/factors/goodwill_to_equity_lagged_factors.csv",
-        "goodwill_to_market_cap_lagged": "output/factors/goodwill_to_market_cap_lagged_factors.csv"
+        "goodwill_to_shareholder_equity_cap_lagged": "output/factors/goodwill_to_shareholder_equity_cap_lagged_factors.csv"
     }
 
     results_by_ga = {}
@@ -252,7 +252,7 @@ def main():
         sheet_key = {
             "goodwill_to_sales_lagged": "GA1",
             "goodwill_to_equity_lagged": "GA2",
-            "goodwill_to_market_cap_lagged": "GA3"
+            "goodwill_to_shareholder_equity_cap_lagged": "GA3"
         }[ga_choice]
 
         regression_results, sharpe_results = process_ga_file(path, ff_factors, ga_choice)

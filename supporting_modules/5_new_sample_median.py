@@ -35,7 +35,7 @@ def load_data(filepath: str) -> pd.DataFrame:
     
     required_cols = [
         'crsp_date', 'ret', 'market_cap', 'exchcd', 'permno',
-        'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged'
+        'goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_shareholder_equity_cap_lagged'
     ]
     
     try:
@@ -273,7 +273,7 @@ def main(filepath: str) -> None:
     df['month'] = df['crsp_date'].dt.month
     
     # List of GA metrics to process
-    ga_metrics = ['goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_market_cap_lagged']
+    ga_metrics = ['goodwill_to_sales_lagged', 'goodwill_to_equity_lagged', 'goodwill_to_shareholder_equity_cap_lagged']
     
     # Main loop over GA metrics
     for ga_metric in ga_metrics:

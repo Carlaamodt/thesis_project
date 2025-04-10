@@ -171,24 +171,24 @@ def compute_goodwill_factors(df):
     # 1. Raw ratios
     df['goodwill_to_sales'] = df['gdwl'] / df['revt']
     df['goodwill_to_equity'] = df['gdwl'] / df['ceq']
-    df['goodwill_to_market_cap'] = df['gdwl'] / df['market_cap']
+    df['goodwill_to_shareholder_equity_cap'] = df['gdwl'] / df['seq']
 
     # 2. Replace inf/-inf with NaN
-    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']:
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_shareholder_equity_cap']:
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
 
     # ✅ 3. Winsorize BEFORE lagging
-    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']:
+    for col in ['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_shareholder_equity_cap']:
         lower, upper = df[col].quantile([0.01, 0.99])
         df[col] = df[col].clip(lower, upper)
 
     # 4. Then create lagged variables, on purpose shift(0)
     df['goodwill_to_sales_lagged'] = df.groupby('gvkey')['goodwill_to_sales'].shift(0)
     df['goodwill_to_equity_lagged'] = df.groupby('gvkey')['goodwill_to_equity'].shift(0)
-    df['goodwill_to_market_cap_lagged'] = df.groupby('gvkey')['goodwill_to_market_cap'].shift(0)
+    df['goodwill_to_shareholder_equity_cap_lagged'] = df.groupby('gvkey')['goodwill_to_shareholder_equity_cap'].shift(0)
 
     print("📊 Goodwill Factor Summary:")
-    print(df[['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_market_cap']].describe())
+    print(df[['goodwill_to_sales', 'goodwill_to_equity', 'goodwill_to_shareholder_equity_cap']].describe())
 
     return df
 
