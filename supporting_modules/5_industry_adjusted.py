@@ -245,7 +245,7 @@ def get_sample_decile_breakpoints(df: pd.DataFrame, metric: str, year: int) -> O
     Returns:
         np.ndarray: Array of breakpoints (10th to 90th percentiles), or None if insufficient data.
     """
-    sample_df = df[(df['crsp_date'].dt.month == 6) & (df['crsp_date'].dt.year == year)]
+    sample_df = df[(df['crsp_date'].dt.month == 6) & (df['year'] == year)]
     sample_df = sample_df[sample_df[metric].notna()]
     
     if len(sample_df) < 10:  # Relaxed from 20 to 10 firms
