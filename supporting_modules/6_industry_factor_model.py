@@ -234,31 +234,27 @@ def process_ga_file(filepath, ff_factors, ga_choice):
 # Main
 # ----------------------------
 def main():
-    """Main function to run regressions and compute Sharpe ratios for all GA factors."""
     ff_factors = load_ff_factors()
-
     ga_files = {
-    "gte_industry_adj": "output/industry_adjusted/factors/gte_industry_adj_factors.csv"
+        "goodwill_to_sales_lagged_industry_adj": "output/industry_adjusted/factors/goodwill_to_sales_lagged_industry_adj_factors.csv",
+        "goodwill_to_equity_lagged_industry_adj": "output/industry_adjusted/factors/goodwill_to_equity_lagged_industry_adj_factors.csv",
+        "goodwill_to_shareholder_equity_cap_lagged_industry_adj": "output/industry_adjusted/factors/goodwill_to_shareholder_equity_cap_lagged_industry_adj_factors.csv"
     }
-
     results_by_ga = {}
     sharpe_by_ga = {}
-
     for ga_choice, path in ga_files.items():
         logger.info(f"Processing {ga_choice} from {path}")
         print(f"\n🔍 Processing GA metric: {ga_choice}")
         sheet_key = {
-            "gte_industry_adj": "GA2_industry_adj"
+            "goodwill_to_sales_lagged_industry_adj": "GA1_industry_adj",
+            "goodwill_to_equity_lagged_industry_adj": "GA2_industry_adj",
+            "goodwill_to_shareholder_equity_cap_lagged_industry_adj": "GA3_industry_adj"
         }[ga_choice]
-
         regression_results, sharpe_results = process_ga_file(path, ff_factors, ga_choice)
         results_by_ga[sheet_key] = regression_results
         sharpe_by_ga[sheet_key] = sharpe_results
-
-    # Export regression results to Excel
     output_path = "output/industry_adjusted/ga_factor_regression_results_monthly_industry_adj.xlsx"
-    os.makedirs("output", exist_ok=True)
-
+    os.makedirs("output/industry_adjusted", exist_ok=True)
     with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
         for sheet, df in results_by_ga.items():
             if df is not None and not df.empty:
@@ -269,15 +265,11 @@ def main():
             else:
                 pd.DataFrame().to_excel(writer, sheet_name=sheet, index=False)
                 print(f"⚠️ No regression results for sheet {sheet}. Created empty sheet.")
-
-        # Export to CSV as well (one CSV per GA sheet)
         for sheet, df in results_by_ga.items():
             if df is not None and not df.empty:
-                csv_path = f"output/{sheet.lower()}_regression_results.csv"
+                csv_path = f"output/industry_adjusted/{sheet.lower()}_regression_results.csv"
                 df.to_csv(csv_path, index=False)
                 logger.info(f"Saved regression CSV: {csv_path}")
-
-    # Export Sharpe ratios to Excel
     sharpe_output_path = "output/industry_adjusted/ga_factor_sharpe_results_industry_adj.xlsx"
     with pd.ExcelWriter(sharpe_output_path, engine='xlsxwriter') as writer:
         for sheet, df in sharpe_by_ga.items():
@@ -289,14 +281,11 @@ def main():
             else:
                 pd.DataFrame().to_excel(writer, sheet_name=sheet, index=False)
                 print(f"⚠️ No Sharpe ratios for sheet {sheet}. Created empty sheet.")
-
-        # Export to CSV as well
         for sheet, df in sharpe_by_ga.items():
             if df is not None and not df.empty:
-                csv_path = f"output/{sheet.lower()}_sharpe_results.csv"
+                csv_path = f"output/industry_adjusted/{sheet.lower()}_sharpe_results.csv"
                 df.to_csv(csv_path, index=False)
                 logger.info(f"Saved Sharpe CSV: {csv_path}")
-
     print(f"\n✅ Regression results saved to {output_path}")
     print(f"✅ Sharpe ratios saved to {sharpe_output_path}")
 
