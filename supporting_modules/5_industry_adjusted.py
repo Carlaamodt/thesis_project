@@ -140,8 +140,9 @@ def compute_industry_adjusted_gte(df: pd.DataFrame) -> pd.DataFrame:
                    .agg({'gte': 'mean', 'permno': 'count'})
                    .rename(columns={'gte': 'industry_avg_gte', 'permno': 'num_firms'}))
 
-    # Filter industries with at least 4 firms
-    industry_avg = industry_avg[industry_avg['num_firms'] >= 4]
+    # Filter industries with at least 3 firms
+    industry_avg = industry_avg[industry_avg['num_firms'] >= 3]
+    ###Log number of dropped industries
 
     # Merge industry averages back to the dataset
     df_latest = df_latest.merge(industry_avg[['industry_avg_gte']], 
