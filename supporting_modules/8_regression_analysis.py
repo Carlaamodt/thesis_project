@@ -157,7 +157,7 @@ def main():
         
         # Merge with FF factors
         merged = ga_df.join(ff_factors, how='inner')
-        merged = merged[merged.index.year <= 2023]  # Cap at 2023, start from earliest available
+        merged = merged[(merged.index >= '2004-07-01') & (merged.index <= '2023-12-31')]
         logger.info(f"Merged dataset for {ga_name}: {len(merged)} months, from {merged.index.min()} to {merged.index.max()}")
 
         # Check for missing values

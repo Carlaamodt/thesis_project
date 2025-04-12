@@ -108,29 +108,38 @@ def merge_compustat_crsp(compustat, crsp_ret, crsp_compustat):
 
 def apply_filters(df):
     print("📊 Applying filtering rules...")
-    df = df[df['exchcd'].isin([1, 2, 3])]
-    print(f"After exchange filter: {df.shape[0]} rows")
     
-    df = df.groupby('permno').filter(lambda x: len(x) >= 12)
-    print(f"After min obs filter: {df.shape[0]} rows")
-    
+    # Initial number of stocks
     initial_permnos = df['permno'].nunique()
-    print(f"Starting unique permnos: {initial_permnos}")
     
+    # Exchange filter
+    df = df[df['exchcd'].isin([1, 2, 3])]
+    stocks_after_exchange = df['permno'].nunique()
+    print(f"After exchange filter: {df.shape[0]} rows, dropped {initial_permnos - stocks_after_exchange} stocks")
+    
+    # Minimum observations filter
+    df = df.groupby('permno').filter(lambda x: len(x) >= 12)
+    stocks_after_min_obs = df['permno'].nunique()
+    print(f"After min obs filter: {df.shape[0]} rows, dropped {stocks_after_exchange - stocks_after_min_obs} stocks")
+    
+    # Positive assets filter
     df_at = df[df['at'] > 0]
-    at_dropped = initial_permnos - df_at['permno'].nunique()
-    print(f"After positive assets filter: {df_at.shape[0]} rows, dropped {at_dropped} companies")
+    stocks_after_at = df_at['permno'].nunique()
+    print(f"After positive assets filter: {df_at.shape[0]} rows, dropped {stocks_after_min_obs - stocks_after_at} stocks")
     
+    # Positive equity filter
     df_ceq = df_at[df_at['ceq'] > 0]
-    ceq_dropped = df_at['permno'].nunique() - df_ceq['permno'].nunique()
-    print(f"After positive equity filter: {df_ceq.shape[0]} rows, dropped {ceq_dropped} companies")
+    stocks_after_ceq = df_ceq['permno'].nunique()
+    print(f"After positive equity filter: {df_ceq.shape[0]} rows, dropped {stocks_after_at - stocks_after_ceq} stocks")
     
+    # Positive goodwill filter
     df_gdwl = df_ceq[df_ceq['gdwl'] > 0]
-    gdwl_dropped = df_ceq['permno'].nunique() - df_gdwl['permno'].nunique()
-    print(f"After positive goodwill filter: {df_gdwl.shape[0]} rows, dropped {gdwl_dropped} companies")
+    stocks_after_gdwl = df_gdwl['permno'].nunique()
+    print(f"After positive goodwill filter: {df_gdwl.shape[0]} rows, dropped {stocks_after_ceq - stocks_after_gdwl} stocks")
     
     df = df_gdwl.copy()
     
+    # Zero return streak filter
     df.loc[:, 'zero_streak'] = df.groupby('permno')['ret'].apply(
         lambda x: (x == 0).astype(int).groupby((x != 0).cumsum()).cumsum()
     ).reset_index(drop=True)
@@ -139,26 +148,36 @@ def apply_filters(df):
     df.loc[:, 'is_nyse'] = (df['exchcd'] == 1).astype(int)
     
     df = df[df['zero_streak'] < 6]
-    print(f"After zero return filter: {df.shape[0]} rows")
+    stocks_after_zero = df['permno'].nunique()
+    print(f"After zero return filter: {df.shape[0]} rows, dropped {stocks_after_gdwl - stocks_after_zero} stocks")
     
+    # Non-missing market cap filter
     df = df[df['market_cap'].notna()]
-    print(f"After non-missing market_cap filter: {df.shape[0]} rows")
+    stocks_after_market_cap = df['permno'].nunique()
+    print(f"After non-missing market_cap filter: {df.shape[0]} rows, dropped {stocks_after_zero - stocks_after_market_cap} stocks")
     
+    # Market cap percentile filter
     df['market_cap_roll'] = df.groupby('permno')['market_cap'].rolling(window=36, min_periods=1).mean().reset_index(level=0, drop=True)
     df['market_cap_percentile'] = df.groupby('crsp_date')['market_cap_roll'].rank(pct=True)
-   
     df = df[df['market_cap_percentile'] > 0.005]
-    print(f"After market_cap filter: {df.shape[0]} rows")
+    stocks_after_market_cap_percentile = df['permno'].nunique()
+    print(f"After market_cap filter: {df.shape[0]} rows, dropped {stocks_after_market_cap - stocks_after_market_cap_percentile} stocks")
     
+    # Penny stock filter
     df['avg_price'] = df.groupby('permno')['prc'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
     df = df[df['avg_price'].abs() >= 1]
-    print(f"After penny stock filter: {df.shape[0]} rows")
+    stocks_after_penny = df['permno'].nunique()
+    print(f"After penny stock filter: {df.shape[0]} rows, dropped {stocks_after_market_cap_percentile - stocks_after_penny} stocks")
     
+    # Volume filter
     df['avg_vol'] = df.groupby('permno')['vol'].rolling(window=12, min_periods=1).mean().reset_index(level=0, drop=True)
     df = df[df['vol'] >= 0.01 * df['avg_vol']]
-    print(f"After volume filter: {df.shape[0]} rows")
+    stocks_after_volume = df['permno'].nunique()
+    print(f"After volume filter: {df.shape[0]} rows, dropped {stocks_after_penny - stocks_after_volume} stocks")
     
-    print(f"✅ Filtering completed. Final shape: {df.shape}")
+    # Final dataset summary
+    print(f"✅ Filtering completed. Final dataset after filtering: {df.shape[0]} rows, {df.shape[1]} columns, {stocks_after_volume} stocks")
+    
     return df
 
 ##################################

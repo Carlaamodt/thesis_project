@@ -4,125 +4,216 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import glob
-import datetime
+import logging
 
-# Set output directory with subfolders
-output_dir = "analysis_output/file4_analysis"
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Set output directory
+output_dir = "/Users/carlaamodt/thesis_project/File_4_analysis"
 os.makedirs(output_dir, exist_ok=True)
 
-# Subdirectories for each file's analysis
-file1_dir = os.path.join(output_dir, "file1")
-file2_dir = os.path.join(output_dir, "file2")
-file3_dir = os.path.join(output_dir, "file3")
-os.makedirs(file1_dir, exist_ok=True)
-os.makedirs(file2_dir, exist_ok=True)
-os.makedirs(file3_dir, exist_ok=True)
+# Set seaborn style (no gridlines)
+sns.set(style="white")
 
-# Set seaborn style for better visuals
-sns.set(style="whitegrid")
+# Counter for numbering outputs
+output_counter = 1
+def get_output_filename(prefix):
+    global output_counter
+    filename = f"file4_{output_counter:03d}_{prefix}"
+    output_counter += 1
+    return filename
+
+# Define a consistent color palette for the 10 industries (used in goodwill trends)
+colors_10 = sns.color_palette("tab10", 10)
 
 ########################################
 ### Load Raw and Processed Data ###
 ########################################
 
-def load_data(directory="data/"):
+def load_ff48_mapping_from_excel(filepath: str) -> dict:
+    """Load Fama-French 48 industry classification mapping from an Excel file."""
+    logger.info(f"Loading FF48 industry classification from {filepath}")
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Excel file not found at {filepath}")
+    
+    df = pd.read_excel(filepath)
+    if not all(col in df.columns for col in ['Industry number', 'Industry code', 'Industry description']):
+        raise ValueError("Excel file must contain columns: 'Industry number', 'Industry code', 'Industry description'")
+    
+    df['Industry number'] = df['Industry number'].ffill()
+    ff48_mapping = {}
+    for _, row in df.iterrows():
+        code = row['Industry code']
+        industry_number = row['Industry number']
+        if isinstance(code, str) and '-' in code:
+            try:
+                start, end = map(int, code.strip().split('-'))
+                ff48_mapping[range(start, end + 1)] = int(industry_number) if pd.notna(industry_number) else 48
+            except ValueError:
+                logger.warning(f"Skipping invalid SIC range: {code}")
+    logger.info(f"Loaded {len(ff48_mapping)} SIC ranges into FF48 mapping.")
+    return ff48_mapping
+
+def map_sic_to_ff48(sic, ff48_mapping):
+    """Map a 4-digit SIC code to Fama-French 48 industry."""
+    try:
+        if pd.isna(sic):
+            return 48  # Assign to "Other" if SIC is missing
+        sic_str = str(sic).split('.')[0]  # Remove decimal part
+        sic_int = int(sic_str) if sic_str.isdigit() else 0
+        for sic_range, industry in ff48_mapping.items():
+            if sic_int in sic_range:
+                return industry
+        return 48  # Default to "Other"
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid SIC code '{sic}': {e}. Defaulting to 'Other'.")
+        return 48
+
+def map_ff48_to_10_industries(ff48_id):
+    """Map Fama-French 48 industries to 10 broader categories."""
+    mapping = {
+        # Consumer Goods
+        1: "Consumer Goods",  # Agriculture
+        2: "Consumer Goods",  # Food Products
+        3: "Consumer Goods",  # Candy & Soda
+        4: "Consumer Goods",  # Beer & Liquor
+        5: "Consumer Goods",  # Tobacco Products
+        9: "Consumer Goods",  # Consumer Goods
+        10: "Consumer Goods",  # Apparel
+        16: "Consumer Goods",  # Textiles
+        # Healthcare
+        11: "Healthcare",  # Healthcare
+        12: "Healthcare",  # Medical Equipment
+        13: "Healthcare",  # Pharmaceutical Products
+        # Manufacturing
+        14: "Manufacturing",  # Chemicals
+        15: "Manufacturing",  # Rubber and Plastic Products
+        17: "Manufacturing",  # Construction Materials
+        18: "Manufacturing",  # Construction
+        19: "Manufacturing",  # Steel Works Etc
+        20: "Manufacturing",  # Fabricated Products
+        21: "Manufacturing",  # Machinery
+        22: "Manufacturing",  # Electrical Equipment
+        23: "Manufacturing",  # Automobiles and Trucks
+        24: "Manufacturing",  # Aircraft
+        25: "Manufacturing",  # Shipbuilding, Railroad Equipment
+        37: "Manufacturing",  # Measuring and Control Equipment
+        38: "Manufacturing",  # Business Supplies
+        39: "Manufacturing",  # Shipping Containers
+        # Energy
+        26: "Energy",  # Defense
+        27: "Energy",  # Precious Metals
+        28: "Energy",  # Non-Metallic and Industrial Metal Mining
+        29: "Energy",  # Coal
+        30: "Energy",  # Petroleum and Natural Gas
+        # Technology
+        32: "Technology",  # Communication
+        34: "Technology",  # Business Services
+        35: "Technology",  # Computers
+        36: "Technology",  # Electronic Equipment
+        48: "Technology",  # Cogeneration - SM power producer (also "Other")
+        # Utilities
+        31: "Utilities",  # Utilities
+        # Transportation
+        40: "Transportation",  # Transportation
+        # Retail/Wholesale
+        41: "Retail/Wholesale",  # Wholesale
+        42: "Retail/Wholesale",  # Retail
+        47: "Retail/Wholesale",  # Trading
+        # Services
+        6: "Services",  # Recreation
+        7: "Services",  # Entertainment
+        8: "Services",  # Printing and Publishing
+        33: "Services",  # Personal Services
+        43: "Services",  # Restaurants, Hotels, Motels
+        # Finance
+        44: "Finance",  # Banking
+        45: "Finance",  # Insurance
+        46: "Finance",  # Real Estate
+    }
+    return mapping.get(ff48_id, "Other")
+
+def load_data(directory="/Users/carlaamodt/thesis_project/data"):
+    """Load all required data files."""
     files = {
         "compustat": load_latest_file(f"{directory}/compustat_*.csv"),
         "crsp_ret": load_latest_file(f"{directory}/crsp_ret_*.csv"),
         "crsp_delist": load_latest_file(f"{directory}/crsp_delist_*.csv"),
         "crsp_compustat": load_latest_file(f"{directory}/crsp_compustat_*.csv"),
         "processed": f"{directory}/processed_data.csv",
-        "fama_french": f"{directory}/FamaFrench_factors_with_momentum.csv"
+        "fama_french": f"{directory}/FamaFrench_factors_with_momentum.csv",
+        "ff48_mapping": "/Users/carlaamodt/thesis_project/Industry classificationFF.xlsx"
     }
     missing_files = [k for k, v in files.items() if v is None or not os.path.exists(v)]
     if missing_files:
+        logger.error(f"Missing files: {', '.join(missing_files)}")
         raise FileNotFoundError(f"Missing files: {', '.join(missing_files)}")
     
-    print("📥 Loading data...")
-    compustat = pd.read_csv(files["compustat"], parse_dates=['date'])
-    crsp_ret = pd.read_csv(files["crsp_ret"], parse_dates=['date'])
-    crsp_delist = pd.read_csv(files["crsp_delist"], parse_dates=['dlstdt'])
-    crsp_compustat = pd.read_csv(files["crsp_compustat"], parse_dates=['linkdt', 'linkenddt'])
-    processed = files["processed"]
-    fama_french = pd.read_csv(files["fama_french"], parse_dates=['date'])
-    
-    return compustat, crsp_ret, crsp_delist, crsp_compustat, processed, fama_french
+    logger.info("Loading data...")
+    data = {
+        "compustat": pd.read_csv(files["compustat"], parse_dates=['date']),
+        "crsp_ret": pd.read_csv(files["crsp_ret"], parse_dates=['date']),
+        "crsp_delist": pd.read_csv(files["crsp_delist"], parse_dates=['dlstdt']),
+        "crsp_compustat": pd.read_csv(files["crsp_compustat"], parse_dates=['linkdt', 'linkenddt']),
+        "processed_path": files["processed"],
+        "fama_french": pd.read_csv(files["fama_french"], parse_dates=['date']),
+        "ff48_mapping": load_ff48_mapping_from_excel(files["ff48_mapping"])
+    }
+    return data
 
 def load_latest_file(pattern):
+    """Load the most recent file matching the pattern."""
     files = sorted(glob.glob(pattern))
     return files[-1] if files else None
 
 ########################################
-### Raw Data Overview (File 1) ###
+### Raw Data Overview ###
 ########################################
 
-def raw_data_overview(compustat, crsp_ret, crsp_delist, crsp_compustat):
-    print("\n🔍 Raw Data Overview (File 1 - Data Extraction):")
+def raw_data_overview(data):
+    """Generate overview of raw Compustat and CRSP data."""
+    logger.info("Generating raw data overview...")
+    compustat = data['compustat']
     
     # Compustat Overview
-    print("\nCompustat:")
-    print(f"Rows: {len(compustat)}, Unique gvkey: {compustat['gvkey'].nunique()}")
-    print(f"Date range: {compustat['date'].min()} to {compustat['date'].max()}")
-    goodwill_stats = {
-        "Total firms": compustat['gvkey'].nunique(),
+    stats = {
+        "Rows": len(compustat),
+        "Unique firms (gvkey)": compustat['gvkey'].nunique(),
+        "Date range": f"{compustat['date'].min().date()} to {compustat['date'].max().date()}",
         "Firms with goodwill > 0": compustat.loc[compustat['gdwl'] > 0, 'gvkey'].nunique(),
         "Firms with goodwill NaN": compustat.loc[compustat['gdwl'].isna(), 'gvkey'].nunique()
     }
-    print(f"Goodwill stats: {goodwill_stats}")
+    stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
+    stats_df.to_csv(os.path.join(output_dir, get_output_filename("compustat_overview.csv")))
+    logger.info(f"Compustat overview saved as file4_{output_counter-1:03d}")
     
-    # Print available columns to debug
-    print("\nAvailable columns in Compustat:", compustat.columns.tolist())
-    
-    # Define key variables, excluding 'sale' if not present
+    # Key variables
     key_vars = ['gdwl', 'at', 'ceq', 'csho']
-    available_vars = [var for var in key_vars if var in compustat.columns]
-    if len(available_vars) < len(key_vars):
-        print(f"⚠️ Some key variables are missing: {[var for var in key_vars if var not in compustat.columns]}")
+    compustat_stats = compustat[key_vars].describe()
+    compustat_stats.to_csv(os.path.join(output_dir, get_output_filename("compustat_key_vars_stats.csv")))
+    logger.info(f"Compustat key variables stats saved as file4_{output_counter-1:03d}")
     
-    # Missing values for available key variables
-    print(f"Missing values (key vars):\n{compustat[available_vars].isna().sum()}")
-    
-    # Summary statistics for available key variables
-    compustat_stats = compustat[available_vars].describe()
-    compustat_stats.to_csv(os.path.join(file1_dir, "compustat_key_vars_stats.csv"))
-    print(f"\nCompustat key variables stats saved to {file1_dir}/compustat_key_vars_stats.csv")
-    print(compustat_stats)
-
-    # Plot distribution of goodwill
+    # Goodwill distribution
     plt.figure(figsize=(10, 6))
     sns.histplot(compustat[compustat['gdwl'] > 0]['gdwl'], bins=50, kde=True, log_scale=True)
-    plt.title("Distribution of Goodwill (gdwl > 0, Log Scale)")
+    plt.title("Distribution of Goodwill (Log Scale)")
     plt.xlabel("Goodwill (Log Scale)")
     plt.ylabel("Frequency")
-    plt.savefig(os.path.join(file1_dir, "goodwill_distribution.png"))
+    plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_distribution.png")), bbox_inches='tight')
     plt.close()
-
-    # CRSP Returns Overview
-    print("\nCRSP Returns:")
-    print(f"Rows: {len(crsp_ret)}, Unique permno: {crsp_ret['permno'].nunique()}")
-    print(f"Date range: {crsp_ret['date'].min()} to {crsp_ret['date'].max()}")
-    print(f"Missing returns: {crsp_ret['ret'].isna().sum()}")
-
-    # CRSP Delistings Overview
-    print("\nCRSP Delistings:")
-    print(f"Rows: {len(crsp_delist)}, Unique permno: {crsp_delist['permno'].nunique()}")
-    print(f"Date range: {crsp_delist['dlstdt'].min()} to {crsp_delist['dlstdt'].max()}")
-
-    # CRSP-Compustat Link Overview
-    print("\nCRSP-Compustat Link:")
-    print(f"Rows: {len(crsp_compustat)}, Unique gvkey-permno pairs: {crsp_compustat[['gvkey', 'permno']].drop_duplicates().shape[0]}")
-    print(f"Link date range: {crsp_compustat['linkdt'].min()} to {crsp_compustat['linkenddt'].max()}")
+    logger.info(f"Goodwill distribution plot saved as file4_{output_counter-1:03d}")
 
 ########################################
-### Processed Data Exploration (File 2) ###
+### Processed Data Exploration ###
 ########################################
 
-def processed_data_exploration(processed_path, chunk_size=500_000):
-    print("\n🎯 Processed Data Exploration (File 2 - Data Processing):")
+def processed_data_exploration(processed_path, ff48_mapping, chunk_size=500_000):
+    """Explore processed data with industry distribution and key metrics."""
+    logger.info("Exploring processed data...")
     
-    dtypes = {
-        'naicsh': 'str', 'sich': 'str', 'dlstcd': 'str', 'linktype': 'str'
-    }
+    dtypes = {'naicsh': 'str', 'sich': 'str', 'dlstcd': 'str', 'linktype': 'str'}
     
     # Basic stats
     total_rows, unique_gvkeys, unique_permnos, years = 0, set(), set(), set()
@@ -132,292 +223,308 @@ def processed_data_exploration(processed_path, chunk_size=500_000):
         unique_permnos.update(chunk['permno'].unique())
         years.update(chunk['crsp_date'].dt.year.unique())
     
-    print(f"Rows: {total_rows}")
-    print(f"Unique gvkeys: {len(unique_gvkeys)}")
-    print(f"Unique permnos: {len(unique_permnos)}")
-    print(f"Years covered: {sorted(years)}")
-
-    # Coverage stats by year
+    num_firms = len(unique_gvkeys)
+    num_stocks = len(unique_permnos)
+    print(f"Number of Firms (unique gvkey): {num_firms}")
+    print(f"Number of Stocks (unique permno): {num_stocks}")
+    
+    stats = {
+        "Rows": total_rows,
+        "Unique firms (gvkey)": num_firms,
+        "Unique stocks (permno)": num_stocks,
+        "Years covered": sorted(years)
+    }
+    stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
+    stats_df.to_csv(os.path.join(output_dir, get_output_filename("processed_data_stats.csv")))
+    logger.info(f"Processed data stats saved as file4_{output_counter-1:03d}")
+    
+    # Industry distribution (FF48 and 10 categories)
+    industry_data = plot_industry_distributions(processed_path, ff48_mapping, chunk_size, num_firms)
+    
+    # Firm count over time
     coverage = []
     for chunk in pd.read_csv(processed_path, chunksize=chunk_size, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False):
-        chunk_coverage = chunk.groupby(chunk['crsp_date'].dt.year).agg(
-            firms=('gvkey', 'nunique'),
-            returns_na=('ret', lambda x: x.isna().sum()),
-            goodwill_na=('gdwl', lambda x: x.isna().sum())
-        )
+        chunk_coverage = chunk.groupby(chunk['crsp_date'].dt.year).agg(firms=('gvkey', 'nunique'))
         coverage.append(chunk_coverage)
     coverage_df = pd.concat(coverage).groupby(level=0).sum()
-    coverage_df.to_csv(os.path.join(file2_dir, "data_coverage_by_year.csv"))
-    print(f"\nCoverage by year saved to {file2_dir}/data_coverage_by_year.csv")
-
-    # Plot firm count over time
+    coverage_df = coverage_df[coverage_df.index >= 2003]  # Start from 2003
+    coverage_df.to_csv(os.path.join(output_dir, get_output_filename("firms_by_year.csv")))
+    
     plt.figure(figsize=(10, 6))
     sns.lineplot(data=coverage_df['firms'], label="Unique Firms")
     plt.title("Number of Firms Over Time")
     plt.xlabel("Year")
     plt.ylabel("Number of Firms")
-    plt.savefig(os.path.join(file2_dir, "firms_over_time.png"))
+    plt.xticks(ticks=coverage_df.index, labels=coverage_df.index.astype(int), rotation=45)  # Full years
+    plt.savefig(os.path.join(output_dir, get_output_filename("firms_over_time.png")), bbox_inches='tight')
+    plt.close()
+    logger.info(f"Firms over time plot saved as file4_{output_counter-1:03d}")
+    
+    # Additional analysis: Goodwill trends by major industry
+    plot_goodwill_trends(processed_path, ff48_mapping, industry_data['industry_df_10'], chunk_size)
+
+def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000, total_firms=None):
+    """Create donut charts for FF48 and 10-industry distributions, plus a bar chart for top 10 FF48 industries."""
+    logger.info("Generating industry distribution visualizations...")
+    
+    firm_industries = {}
+    unique_firms_with_sic = set()
+    
+    # Read processed data in chunks
+    dtypes = {'sich': 'str'}
+    for chunk in pd.read_csv(processed_path, chunksize=chunk_size, dtype=dtypes, low_memory=False):
+        chunk_firms = chunk[['gvkey', 'sich']].drop_duplicates()
+        
+        # Split into firms with and without SIC codes
+        chunk_with_sic = chunk_firms.dropna(subset=['sich']).copy()  # Add .copy() to avoid SettingWithCopyWarning
+        chunk_without_sic = chunk_firms[chunk_firms['sich'].isna()]
+        
+        # Add firms with SIC codes to the set for counting
+        unique_firms_with_sic.update(chunk_with_sic['gvkey'].unique())
+        
+        # Map firms with SIC codes to FF48 industries
+        chunk_with_sic['ff48'] = chunk_with_sic['sich'].apply(lambda x: map_sic_to_ff48(x, ff48_mapping))
+        industry_counts = chunk_with_sic.groupby('ff48')['gvkey'].nunique()
+        
+        for ff48, count in industry_counts.items():
+            firm_industries[ff48] = firm_industries.get(ff48, 0) + count
+    
+    # Count firms without SIC codes (they will be assigned to "Other")
+    firms_without_sic = total_firms - len(unique_firms_with_sic)
+    logger.info(f"Firms with SIC: {len(unique_firms_with_sic)}, Firms without SIC: {firms_without_sic}")
+    
+    # Ensure all 48 industries are represented, even with zero firms
+    all_industries = {i: 0 for i in range(1, 49)}
+    all_industries.update(firm_industries)
+    
+    # Add firms without SIC codes to the "Other" category (FF48 industry 48)
+    all_industries[48] = all_industries.get(48, 0) + firms_without_sic
+    
+    # Convert to DataFrame for FF48
+    industry_df_48 = pd.DataFrame.from_dict(all_industries, orient='index', columns=['num_firms'])
+    industry_df_48 = industry_df_48.sort_index()
+    
+    # Load FF48 industry names
+    ff48_excel = pd.read_excel("/Users/carlaamodt/thesis_project/Industry classificationFF.xlsx")
+    ff48_excel['Industry number'] = pd.to_numeric(ff48_excel['Industry number'], errors='coerce').fillna(48).astype(int)
+    ff48_names = dict(zip(ff48_excel['Industry number'], ff48_excel['Industry description'].fillna('Other')))
+    industry_df_48['industry_name'] = industry_df_48.index.map(ff48_names).fillna('Other')
+    
+    # Calculate percentages
+    industry_df_48['percentage'] = (industry_df_48['num_firms'] / total_firms * 100).round(2)
+    
+    # Save full FF48 data (all 48 industries)
+    industry_df_48[['industry_name', 'num_firms', 'percentage']].to_csv(
+        os.path.join(output_dir, get_output_filename("ff48_industry_distribution.csv"))
+    )
+    logger.info(f"FF48 industry distribution saved as file4_{output_counter-1:03d}")
+    
+    # Group small industries (<1%) into "Other" for the donut chart
+    industry_df_48_pie = industry_df_48[industry_df_48['num_firms'] > 0].copy()
+    small_industries = industry_df_48_pie[industry_df_48_pie['percentage'] < 1.0]
+    if not small_industries.empty:
+        other_count = small_industries['num_firms'].sum()
+        industry_df_48_pie = industry_df_48_pie[industry_df_48_pie['percentage'] >= 1.0]
+        industry_df_48_pie.loc[48, 'num_firms'] = other_count
+        industry_df_48_pie.loc[48, 'industry_name'] = 'Other'
+        industry_df_48_pie.loc[48, 'percentage'] = (other_count / total_firms * 100).round(2)
+    
+    # Sort by firm count for FF48
+    industry_df_48_pie = industry_df_48_pie.sort_values('num_firms', ascending=False)
+    
+    # FF48 Donut Chart with dark-to-light blue coloring
+    colors_48 = sns.color_palette("Blues", len(industry_df_48_pie))[::-1]  # Dark to light Blues
+    plt.figure(figsize=(12, 12))
+    wedges, texts, autotexts = plt.pie(
+        industry_df_48_pie['num_firms'],
+        labels=industry_df_48_pie['industry_name'],
+        autopct='%1.1f%%',
+        startangle=90,
+        colors=colors_48,
+        textprops={'fontsize': 12},
+        labeldistance=1.1,
+        pctdistance=0.85
+    )
+    for text in texts:
+        text.set_fontsize(12)
+    for autotext in autotexts:
+        autotext.set_fontsize(10)
+    plt.text(0, 0, f'Total Firms\n{total_firms}', fontsize=14, ha='center', va='center', weight='bold')
+    centre_circle = plt.Circle((0, 0), 0.70, fc='white')
+    fig = plt.gcf()
+    fig.gca().add_artist(centre_circle)
+    plt.axis('equal')
+    plt.title('Fama-French 48 Industry Distribution of Firms', fontsize=14, pad=20)
+    output_path = os.path.join(output_dir, get_output_filename("ff48_industry_distribution_donut.png"))
+    plt.savefig(output_path, bbox_inches='tight')
+    plt.close()
+    
+    # Bar chart for top 10 FF48 industries (sorted by num_firms)
+    top_10_df = industry_df_48_pie.head(10)  # Use the sorted DataFrame
+    plt.figure(figsize=(12, 6))
+    sns.barplot(x='num_firms', y='industry_name', hue='industry_name', data=top_10_df, palette='viridis', legend=False)
+    plt.title('Top 10 Fama-French 48 Industries by Firm Count')
+    plt.xlabel('Number of Firms')
+    plt.ylabel('Industry')
+    plt.savefig(os.path.join(output_dir, get_output_filename("ff48_top_10_industries_bar.png")), bbox_inches='tight')
+    plt.close()
+    logger.info(f"Top 10 FF48 industries bar chart saved as file4_{output_counter-1:03d}")
+    
+    # Map to 10 industries
+    industry_df_48['broad_category'] = industry_df_48.index.map(map_ff48_to_10_industries)
+    industry_df_10 = industry_df_48.groupby('broad_category').agg({'num_firms': 'sum'}).reset_index()
+    industry_df_10['percentage'] = (industry_df_10['num_firms'] / total_firms * 100).round(2)
+    industry_df_10 = industry_df_10.sort_values('num_firms', ascending=False)
+    
+    # 10-Industry Donut Chart with dark-to-light blue coloring
+    colors_10_donut = sns.color_palette("Blues", len(industry_df_10))[::-1]  # Dark to light Blues
+    plt.figure(figsize=(10, 10))  # Increased height to accommodate legend
+    wedges, texts, autotexts = plt.pie(
+        industry_df_10['num_firms'],
+        labels=None,  # Remove labels from the pie chart to avoid overlap
+        autopct='%1.1f%%',
+        startangle=90,
+        colors=colors_10_donut,
+        textprops={'fontsize': 12},
+        labeldistance=1.05,
+        pctdistance=0.85
+    )
+    for autotext in autotexts:
+        autotext.set_fontsize(10)
+    plt.text(0, 0, f'Total Firms\n{total_firms}', fontsize=14, ha='center', va='center', weight='bold')
+    centre_circle = plt.Circle((0, 0), 0.52, fc='white')
+    fig = plt.gcf()
+    fig.gca().add_artist(centre_circle)
+    plt.axis('equal')
+    plt.title('Combined Industry Distribution of Firms', fontsize=14, pad=20)
+
+    # Add legend at the bottom with industry names and colors
+    plt.legend(
+        wedges, 
+        industry_df_10['broad_category'], 
+        title="Industries",
+        loc="lower center", 
+        bbox_to_anchor=(0.5, -0.1),  # Position below the chart
+        ncol=3,  # Number of columns in the legend
+        fontsize=10,
+        title_fontsize=12
+    )
+
+    output_path = os.path.join(output_dir, get_output_filename("10_industry_distribution_donut.png"))
+    plt.savefig(output_path, bbox_inches='tight')
     plt.close()
 
-    # Non-zero GA1 (goodwill_to_sales_lagged) and GA2 (goodwill_to_equity_lagged)
-    ga1_col = 'goodwill_to_sales_lagged'
-    ga2_col = 'goodwill_to_equity_lagged'
-    non_zero_counts_ga1 = []
-    non_zero_counts_ga2 = []
+    # Save 10-industry data
+    industry_df_10[['broad_category', 'num_firms', 'percentage']].to_csv(
+        os.path.join(output_dir, get_output_filename("10_industry_distribution.csv"))
+    )
+    logger.info(f"10-industry distribution saved as file4_{output_counter-1:03d}")
+
+    return {'industry_df_48': industry_df_48, 'industry_df_10': industry_df_10}
+
+def plot_goodwill_trends(processed_path, ff48_mapping, industry_df_10, chunk_size=500_000):
+    """Plot goodwill trends over time by major industry as a stacked column chart."""
+    logger.info("Generating goodwill trends by major industry...")
+    
+    dtypes = {'sich': 'str', 'gdwl': 'float'}
+    goodwill_data = []
     for chunk in pd.read_csv(processed_path, chunksize=chunk_size, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False):
-        # GA1
-        if ga1_col not in chunk.columns:
-            print(f"⚠️ Column '{ga1_col}' not found. Skipping GA1 analysis.")
-        else:
-            chunk['has_ga1'] = chunk[ga1_col].notna() & (chunk[ga1_col] != 0)
-            chunk_counts_ga1 = chunk.groupby(chunk['crsp_date'].dt.year).agg(
-                total_firms_ga1=('gvkey', 'nunique'),
-                non_zero_ga1_firms=('gvkey', lambda x: x[chunk['has_ga1']].nunique())
-            )
-            non_zero_counts_ga1.append(chunk_counts_ga1)
-
-        # GA2
-        if ga2_col not in chunk.columns:
-            print(f"⚠️ Column '{ga2_col}' not found. Skipping GA2 analysis.")
-        else:
-            chunk['has_ga2'] = chunk[ga2_col].notna() & (chunk[ga2_col] != 0)
-            chunk_counts_ga2 = chunk.groupby(chunk['crsp_date'].dt.year).agg(
-                total_firms_ga2=('gvkey', 'nunique'),
-                non_zero_ga2_firms=('gvkey', lambda x: x[chunk['has_ga2']].nunique())
-            )
-            non_zero_counts_ga2.append(chunk_counts_ga2)
-
-    # Save GA1 non-zero counts
-    if non_zero_counts_ga1:
-        non_zero_df_ga1 = pd.concat(non_zero_counts_ga1).groupby(level=0).sum()
-        non_zero_df_ga1['pct_non_zero'] = non_zero_df_ga1['non_zero_ga1_firms'] / non_zero_df_ga1['total_firms_ga1']
-        non_zero_df_ga1.to_csv(os.path.join(file2_dir, "firms_unique_goodwill_to_sales_lagged_per_year.csv"))
-        print(f"\nNon-zero GA1 (goodwill_to_sales_lagged) firms per year saved to {file2_dir}/firms_unique_goodwill_to_sales_lagged_per_year.csv")
-        print(non_zero_df_ga1)
-
-    # Save GA2 non-zero counts
-    if non_zero_counts_ga2:
-        non_zero_df_ga2 = pd.concat(non_zero_counts_ga2).groupby(level=0).sum()
-        non_zero_df_ga2['pct_non_zero'] = non_zero_df_ga2['non_zero_ga2_firms'] / non_zero_df_ga2['total_firms_ga2']
-        non_zero_df_ga2.to_csv(os.path.join(file2_dir, "firms_unique_goodwill_to_equity_lagged_per_year.csv"))
-        print(f"\nNon-zero GA2 (goodwill_to_equity_lagged) firms per year saved to {file2_dir}/firms_unique_goodwill_to_equity_lagged_per_year.csv")
-        print(non_zero_df_ga2)
-
-    # Sample for detailed analysis
-    sample_df = pd.read_csv(processed_path, nrows=100_000, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False)
-
-    # Plot return distribution
-    plt.figure(figsize=(10, 6))
-    sns.histplot(sample_df['ret'].dropna(), bins=50, kde=True)
-    plt.title("Distribution of Monthly Returns (Sample)")
-    plt.xlabel("Monthly Return")
-    plt.ylabel("Frequency")
-    plt.savefig(os.path.join(file2_dir, "returns_distribution.png"))
+        chunk = chunk.dropna(subset=['sich', 'gdwl', 'crsp_date'])
+        chunk['ff48'] = chunk['sich'].apply(lambda x: map_sic_to_ff48(x, ff48_mapping))
+        chunk['broad_category'] = chunk['ff48'].map(map_ff48_to_10_industries)
+        chunk['year'] = chunk['crsp_date'].dt.year.astype(int)
+        goodwill_data.append(chunk[['year', 'broad_category', 'gdwl']])
+    
+    goodwill_df = pd.concat(goodwill_data)
+    goodwill_trends = goodwill_df.groupby(['year', 'broad_category'])['gdwl'].mean().reset_index()
+    
+    # Filter to start from 2003
+    goodwill_trends = goodwill_trends[goodwill_trends['year'] >= 2003]
+    
+    # Pivot the data for a stacked column chart
+    goodwill_pivot = goodwill_trends.pivot(index='year', columns='broad_category', values='gdwl').fillna(0)
+    
+    # Define a custom palette with darker, neutral colors (blues, greens, greys)
+    custom_colors = [
+        '#1f4e79',  # Dark blue (Technology)
+        '#2e7031',  # Dark green (Manufacturing)
+        '#4a4a4a',  # Dark grey (Finance)
+        '#355c7d',  # Medium blue (Retail/Wholesale)
+        '#5c7a5a',  # Medium green (Healthcare)
+        '#6d8299',  # Light blue-grey (Services)
+        '#8a9a5b',  # Light green (Consumer Goods)
+        '#6b7280',  # Medium grey (Energy)
+        '#a3bffa',  # Light blue (Transportation)
+        '#a9bdbd',  # Light grey (Utilities)
+    ]
+    
+    # Plot as a stacked column chart with custom colors
+    plt.figure(figsize=(12, 8))
+    goodwill_pivot.plot(kind='bar', stacked=True, color=custom_colors, ax=plt.gca())
+    plt.title('Average Goodwill Over Time by Major Industry')
+    plt.xlabel('Year')
+    plt.ylabel('Average Goodwill (Millions)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_trends_by_industry_stacked.png")), bbox_inches='tight')
     plt.close()
+    logger.info(f"Goodwill trends by industry saved as file4_{output_counter-1:03d}")
 
-    # Distributions of GA1 and GA2
-    if ga1_col in sample_df.columns:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(sample_df[sample_df[ga1_col].notna()][ga1_col], bins=50, kde=True, log_scale=True)
-        plt.title("Distribution of GA1 (goodwill_to_sales_lagged, Log Scale)")
-        plt.xlabel("GA1 (Log Scale)")
-        plt.ylabel("Frequency")
-        plt.savefig(os.path.join(file2_dir, "ga1_distribution.png"))
-        plt.close()
-
-    if ga2_col in sample_df.columns:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(sample_df[sample_df[ga2_col].notna()][ga2_col], bins=50, kde=True, log_scale=True)
-        plt.title("Distribution of GA2 (goodwill_to_equity_lagged, Log Scale)")
-        plt.xlabel("GA2 (Log Scale)")
-        plt.ylabel("Frequency")
-        plt.savefig(os.path.join(file2_dir, "ga2_distribution.png"))
-        plt.close()
-
-    # Trends of GA1 and GA2 over time
-    trends = []
-    for chunk in pd.read_csv(processed_path, chunksize=chunk_size, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False):
-        chunk['year'] = chunk['crsp_date'].dt.year
-        chunk_trends = chunk.groupby('year').agg(
-            mean_ga1=(ga1_col, 'mean') if ga1_col in chunk.columns else None,
-            mean_ga2=(ga2_col, 'mean') if ga2_col in chunk.columns else None
-        )
-        trends.append(chunk_trends)
-    trends_df = pd.concat(trends).groupby(level=0).mean()
-    trends_df.to_csv(os.path.join(file2_dir, "ga1_ga2_trends_over_time.csv"))
-    print(f"\nGA1 and GA2 trends over time saved to {file2_dir}/ga1_ga2_trends_over_time.csv")
-
-    plt.figure(figsize=(10, 6))
-    if ga1_col in sample_df.columns:
-        sns.lineplot(data=trends_df['mean_ga1'], label="Mean GA1 (goodwill_to_sales_lagged)")
-    if ga2_col in sample_df.columns:
-        sns.lineplot(data=trends_df['mean_ga2'], label="Mean GA2 (goodwill_to_equity_lagged)")
-    plt.title("Average GA1 and GA2 Over Time")
-    plt.xlabel("Year")
-    plt.ylabel("Mean Value")
-    plt.legend()
-    plt.savefig(os.path.join(file2_dir, "ga1_ga2_trends_over_time.png"))
+    # Alternative: Plot as a grouped bar chart for better comparison
+    plt.figure(figsize=(12, 8))
+    sns.barplot(data=goodwill_trends, x='year', y='gdwl', hue='broad_category', palette=colors_10)
+    plt.title('Average Goodwill Over Time by Major Industry (Grouped)')
+    plt.xlabel('Year')
+    plt.ylabel('Average Goodwill (Millions)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_trends_by_industry_grouped.png")), bbox_inches='tight')
     plt.close()
-
-    # Relationship between GA1, GA2, and returns
-    if ga1_col in sample_df.columns and 'ret' in sample_df.columns:
-        plt.figure(figsize=(10, 6))
-        sns.scatterplot(x=sample_df[ga1_col], y=sample_df['ret'], alpha=0.5)
-        plt.xscale('log')
-        plt.title("GA1 (goodwill_to_sales_lagged) vs. Monthly Returns")
-        plt.xlabel("GA1 (Log Scale)")
-        plt.ylabel("Monthly Return")
-        plt.savefig(os.path.join(file2_dir, "ga1_vs_returns_scatter.png"))
-        plt.close()
-
-    if ga2_col in sample_df.columns and 'ret' in sample_df.columns:
-        plt.figure(figsize=(10, 6))
-        sns.scatterplot(x=sample_df[ga2_col], y=sample_df['ret'], alpha=0.5)
-        plt.xscale('log')
-        plt.title("GA2 (goodwill_to_equity_lagged) vs. Monthly Returns")
-        plt.xlabel("GA2 (Log Scale)")
-        plt.ylabel("Monthly Return")
-        plt.savefig(os.path.join(file2_dir, "ga2_vs_returns_scatter.png"))
-        plt.close()
-
-    # Box plots: Returns for high vs. low GA1 and GA2
-    if ga1_col in sample_df.columns:
-        sample_df['ga1_quartile'] = pd.qcut(sample_df[ga1_col], 4, labels=['Q1', 'Q2', 'Q3', 'Q4'], duplicates='drop')
-        plt.figure(figsize=(10, 6))
-        sns.boxplot(x='ga1_quartile', y='ret', data=sample_df)
-        plt.title("Monthly Returns by GA1 Quartiles")
-        plt.xlabel("GA1 Quartile")
-        plt.ylabel("Monthly Return")
-        plt.savefig(os.path.join(file2_dir, "returns_by_ga1_quartiles.png"))
-        plt.close()
-
-    if ga2_col in sample_df.columns:
-        sample_df['ga2_quartile'] = pd.qcut(sample_df[ga2_col], 4, labels=['Q1', 'Q2', 'Q3', 'Q4'], duplicates='drop')
-        plt.figure(figsize=(10, 6))
-        sns.boxplot(x='ga2_quartile', y='ret', data=sample_df)
-        plt.title("Monthly Returns by GA2 Quartiles")
-        plt.xlabel("GA2 Quartile")
-        plt.ylabel("Monthly Return")
-        plt.savefig(os.path.join(file2_dir, "returns_by_ga2_quartiles.png"))
-        plt.close()
-
-    # Compare goodwill vs non-goodwill firms
-    sample_df['has_goodwill'] = sample_df['gdwl'] > 0
-    if 'market_cap' in sample_df.columns:
-        goodwill_stats = sample_df.groupby('has_goodwill').agg(
-            mean_ret=('ret', 'mean'),
-            std_ret=('ret', 'std'),
-            mean_market_cap=('market_cap', 'mean'),
-            count=('gvkey', 'count')
-        )
-        goodwill_stats.to_csv(os.path.join(file2_dir, "goodwill_vs_non_goodwill_stats.csv"))
-        print(f"\nZero vs. Non-Zero Goodwill Firms (Sample):\n{goodwill_stats}")
+    logger.info(f"Grouped goodwill trends by industry saved as file4_{output_counter-1:03d}")
 
 ########################################
-### Fama-French Factor Analysis (File 3) ###
+### Fama-French Factor Analysis ###
 ########################################
 
 def fama_french_analysis(fama_french):
-    print("\n📈 Fama-French Factor Analysis (File 3 - Download Fama-French):")
+    """Analyze Fama-French factors."""
+    logger.info("Analyzing Fama-French factors...")
     
-    # Basic stats
-    print(f"Rows: {len(fama_french)}")
-    print(f"Date range: {fama_french['date'].min()} to {fama_french['date'].max()}")
+    stats = {
+        "Rows": len(fama_french),
+        "Date range": f"{fama_french['date'].min().date()} to {fama_french['date'].max().date()}"
+    }
+    stats_df = pd.DataFrame.from_dict(stats, orient='index', columns=['Value'])
+    stats_df.to_csv(os.path.join(output_dir, get_output_filename("fama_french_overview.csv")))
+    
     factor_cols = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom', 'rf']
-    print(f"\nMissing values:\n{fama_french[factor_cols].isna().sum()}")
-    
-    # Summary statistics
     ff_stats = fama_french[factor_cols].describe()
-    ff_stats.to_csv(os.path.join(file3_dir, "fama_french_stats.csv"))
-    print(f"\nFama-French factors summary stats saved to {file3_dir}/fama_french_stats.csv")
-    print(ff_stats)
-
-    # Extreme values
-    for col in factor_cols:
-        print(f"\n{col.upper()} — Top 5:")
-        print(fama_french[[col]].sort_values(by=col, ascending=False).head(5))
-        print(f"{col.upper()} — Bottom 5:")
-        print(fama_french[[col]].sort_values(by=col).head(5))
-
-    # Time series plots (12-month rolling average)
-    for col in factor_cols:
-        fama_french[f'{col}_roll12'] = fama_french[col].rolling(window=12).mean()
-        plt.figure(figsize=(10, 6))
-        sns.lineplot(x='date', y=f'{col}_roll12', data=fama_french, label=f'12-mo Rolling Mean: {col.upper()}')
-        plt.axhline(0, color='gray', linestyle='--')
-        plt.title(f'Rolling 12-Month Average of {col.upper()}')
-        plt.xlabel('Date')
-        plt.ylabel(f'{col.upper()} (12-mo Avg)')
-        plt.legend()
-        plt.savefig(os.path.join(file3_dir, f"{col}_rolling_avg.png"))
-        plt.close()
-
-    # Distribution plots
-    for col in factor_cols:
-        plt.figure(figsize=(10, 6))
-        sns.histplot(fama_french[col].dropna(), bins=50, kde=True)
-        plt.title(f"Distribution of {col.upper()}")
-        plt.xlabel(col.upper())
-        plt.ylabel("Frequency")
-        plt.savefig(os.path.join(file3_dir, f"{col}_distribution.png"))
-        plt.close()
-
+    ff_stats.to_csv(os.path.join(output_dir, get_output_filename("fama_french_stats.csv")))
+    logger.info(f"Fama-French stats saved as file4_{output_counter-1:03d}")
+    
     # Correlation heatmap
     plt.figure(figsize=(10, 8))
     sns.heatmap(fama_french[factor_cols].corr(), annot=True, cmap='coolwarm', vmin=-1, vmax=1)
-    plt.title("Correlation Heatmap of Fama-French Factors")
-    plt.savefig(os.path.join(file3_dir, "fama_french_correlation_heatmap.png"))
+    plt.title("Correlation of Fama-French Factors")
+    plt.savefig(os.path.join(output_dir, get_output_filename("fama_french_correlation_heatmap.png")), bbox_inches='tight')
     plt.close()
-
-########################################
-### Additional Explorative Elements ###
-########################################
-
-def explorative_analysis(compustat, processed_path):
-    print("\n🔬 Additional Explorations:")
-    
-    # Goodwill prevalence over time
-    goodwill_trend = compustat.groupby(compustat['date'].dt.year).agg(
-        firms_with_gdwl=('gdwl', lambda x: (x > 0).sum()),
-        total_firms=('gvkey', 'nunique')
-    )
-    goodwill_trend['pct_with_gdwl'] = goodwill_trend['firms_with_gdwl'] / goodwill_trend['total_firms']
-    goodwill_trend.to_csv(os.path.join(file1_dir, "goodwill_prevalence.csv"))
-    print(f"Goodwill prevalence saved to {file1_dir}/goodwill_prevalence.csv")
-
-    # Exchange distribution
-    dtypes = {'naicsh': 'str', 'sich': 'str', 'dlstcd': 'str', 'linktype': 'str'}
-    sample_df = pd.read_csv(processed_path, nrows=100_000, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False)
-    exch_dist = sample_df.groupby('exchcd')['permno'].nunique().reset_index()
-    exch_dist.columns = ['Exchange Code', 'Unique Permnos']
-    exch_dist.to_csv(os.path.join(file2_dir, "exchange_distribution.csv"), index=False)
-    print(f"Exchange distribution (sample):\n{exch_dist}")
-
-    # Goodwill prevalence by industry (using naicsh)
-    if 'naicsh' in sample_df.columns:
-        industry_goodwill = sample_df.groupby('naicsh').agg(
-            total_firms=('gvkey', 'nunique'),
-            firms_with_gdwl=('gdwl', lambda x: (x > 0).sum())
-        )
-        industry_goodwill['pct_with_gdwl'] = industry_goodwill['firms_with_gdwl'] / industry_goodwill['total_firms']
-        industry_goodwill = industry_goodwill.sort_values('pct_with_gdwl', ascending=False)
-        industry_goodwill.to_csv(os.path.join(file2_dir, "goodwill_by_industry.csv"))
-        print(f"Goodwill prevalence by industry saved to {file2_dir}/goodwill_by_industry.csv")
+    logger.info(f"Fama-French correlation heatmap saved as file4_{output_counter-1:03d}")
 
 ########################################
 ### Main Execution ###
 ########################################
 
 def main():
+    """Main function to run data exploration."""
     try:
-        compustat, crsp_ret, crsp_delist, crsp_compustat, processed_path, fama_french = load_data()
-        raw_data_overview(compustat, crsp_ret, crsp_delist, crsp_compustat)
-        processed_data_exploration(processed_path)
-        fama_french_analysis(fama_french)
-        explorative_analysis(compustat, processed_path)
-        print("✅ Data overview and exploration completed!")
+        data = load_data()
+        raw_data_overview(data)
+        processed_data_exploration(data['processed_path'], data['ff48_mapping'])
+        fama_french_analysis(data['fama_french'])
+        logger.info("Data exploration completed!")
     except Exception as e:
-        print(f"❌ Failed: {e}")
+        logger.error(f"Failed: {e}")
         raise
 
 if __name__ == "__main__":
