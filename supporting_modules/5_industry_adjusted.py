@@ -460,7 +460,7 @@ if __name__ == "__main__":
         '--ff48_filepath',
         type=str,
         required=False,
-        default="/Users/carlaamodt/thesis_project/Industry classificationFF.xlsx",
+        default="/Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx",
         help="Path to the Fama-French 48 industry classification Excel file (default: %(default)s)"
     )
     args = parser.parse_args()
