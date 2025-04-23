@@ -144,7 +144,7 @@ def load_data(directory="/Users/carlaamodt/thesis_project/data"):
         "crsp_compustat": load_latest_file(f"{directory}/crsp_compustat_*.csv"),
         "processed": f"{directory}/processed_data.csv",
         "fama_french": f"{directory}/FamaFrench_factors_with_momentum.csv",
-        "ff48_mapping": "/Users/carlaamodt/thesis_project/Industry classificationFF.xlsx"
+        "ff48_mapping": "/Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx"
     }
     missing_files = [k for k, v in files.items() if v is None or not os.path.exists(v)]
     if missing_files:
@@ -305,7 +305,7 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     industry_df_48 = industry_df_48.sort_index()
     
     # Load FF48 industry names
-    ff48_excel = pd.read_excel("/Users/carlaamodt/thesis_project/Industry classificationFF.xlsx")
+    ff48_excel = pd.read_excel("/Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx")
     ff48_excel['Industry number'] = pd.to_numeric(ff48_excel['Industry number'], errors='coerce').fillna(48).astype(int)
     ff48_names = dict(zip(ff48_excel['Industry number'], ff48_excel['Industry description'].fillna('Other')))
     industry_df_48['industry_name'] = industry_df_48.index.map(ff48_names).fillna('Other')
