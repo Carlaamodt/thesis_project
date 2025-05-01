@@ -13,7 +13,7 @@ os.makedirs(output_dir, exist_ok=True)
 ### Load Data ###
 ########################################
 
-def load_data(directory="data/", ga_choice="goodwill_to_equity_lagged"):
+def load_data(directory="data/", ga_choice="goodwill_to_equity"):
     print(f"📥 Loading data for {ga_choice}...")
     
     # Processed data from 2_data_processing.py
@@ -419,4 +419,4 @@ def main(ga_choice="goodwill_to_sales_lagged", industries=None):
 
 
 if __name__ == "__main__":
-    main(ga_choice="goodwill_to_sales_lagged")
+    main(ga_choice="goodwill_to_equity")

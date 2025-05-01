@@ -208,6 +208,91 @@ def raw_data_overview(data):
 ########################################
 ### Processed Data Exploration ###
 ########################################
+def covid19_shock_analysis(processed_path, chunk_size=500_000):
+    """Analyze max drawdowns and recoveries during COVID-19 (March 2020 to May 2023)."""
+    logger.info("Starting COVID-19 impact analysis (March 2020 to May 2023)...")
+    
+    covid_start = pd.Timestamp("2020-03-01")
+    covid_end = pd.Timestamp("2023-05-31")
+
+    dtypes = {'permno': 'int', 'ret': 'float'}
+    covid_returns = []
+
+    for chunk in pd.read_csv(processed_path, chunksize=chunk_size, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False):
+        chunk = chunk[(chunk['crsp_date'] >= covid_start) & (chunk['crsp_date'] <= covid_end)]
+        covid_returns.append(chunk[['permno', 'crsp_date', 'ret']])
+    
+    if not covid_returns:
+        logger.warning("No data found in the specified COVID-19 period.")
+        return
+
+    df_covid = pd.concat(covid_returns)
+    
+    # Calculate cumulative return per stock
+    df_covid.sort_values(['permno', 'crsp_date'], inplace=True)
+    df_covid['cum_return'] = df_covid.groupby('permno')['ret'].transform(lambda x: (1 + x).cumprod())    
+    # Get min and max cumulative returns for each stock
+    summary = df_covid.groupby('permno').agg(
+        min_cum_return=('cum_return', 'min'),
+        max_cum_return=('cum_return', 'max'),
+        start_cum_return=('cum_return', 'first'),
+        end_cum_return=('cum_return', 'last')
+    ).reset_index()
+    
+    # Calculate % loss and % gain from peak to trough and recovery
+    summary['max_loss_pct'] = (summary['min_cum_return'] - summary['start_cum_return']) / summary['start_cum_return'] * 100
+    summary['max_gain_pct'] = (summary['max_cum_return'] - summary['min_cum_return']) / summary['min_cum_return'] * 100
+
+    # Log high-level insights
+    logger.info(f"COVID-19 analysis on {len(summary)} stocks:")
+    logger.info(f"Average max loss: {summary['max_loss_pct'].mean():.2f}%")
+    logger.info(f"Average max gain: {summary['max_gain_pct'].mean():.2f}%")
+    logger.info(f"Median max loss: {summary['max_loss_pct'].median():.2f}%")
+    logger.info(f"Median max gain: {summary['max_gain_pct'].median():.2f}%")
+
+    # Count how many stocks never recovered to pre-COVID level
+    unrecovered = (summary['end_cum_return'] < summary['start_cum_return']).sum()
+    logger.info(f"Stocks that ended below pre-COVID level by May 2023: {unrecovered} / {len(summary)}")
+    ### FINANCIAL CRISIS SHOCK ANALYSIS ### 
+def financial_crisis_shock_analysis(processed_path, chunk_size=500_000):
+    """Analyze max drawdowns and recoveries during the Global Financial Crisis (Oct 2007 to Dec 2012)."""
+    logger.info("Starting Financial Crisis impact analysis (Oct 2007 to Dec 2012)...")
+    
+    gfc_start = pd.Timestamp("2007-10-01")
+    gfc_end = pd.Timestamp("2012-12-31")
+
+    dtypes = {'permno': 'int', 'ret': 'float'}
+    gfc_returns = []
+
+    for chunk in pd.read_csv(processed_path, chunksize=chunk_size, parse_dates=['crsp_date'], dtype=dtypes, low_memory=False):
+        chunk = chunk[(chunk['crsp_date'] >= gfc_start) & (chunk['crsp_date'] <= gfc_end)]
+        gfc_returns.append(chunk[['permno', 'crsp_date', 'ret']])
+    
+    if not gfc_returns:
+        logger.warning("No data found in the specified Financial Crisis period.")
+        return
+
+    df_gfc = pd.concat(gfc_returns)
+    df_gfc.sort_values(['permno', 'crsp_date'], inplace=True)
+    df_gfc['cum_return'] = df_gfc.groupby('permno')['ret'].transform(lambda x: (1 + x).cumprod())
+    
+    summary = df_gfc.groupby('permno').agg(
+        min_cum_return=('cum_return', 'min'),
+        max_cum_return=('cum_return', 'max'),
+        start_cum_return=('cum_return', 'first'),
+        end_cum_return=('cum_return', 'last')
+    ).reset_index()
+    
+    summary['max_loss_pct'] = (summary['min_cum_return'] - summary['start_cum_return']) / summary['start_cum_return'] * 100
+    summary['max_gain_pct'] = (summary['max_cum_return'] - summary['min_cum_return']) / summary['min_cum_return'] * 100
+
+    logger.info(f"Financial Crisis analysis on {len(summary)} stocks:")
+    logger.info(f"Average max loss: {summary['max_loss_pct'].mean():.2f}%")
+    logger.info(f"Average max gain: {summary['max_gain_pct'].mean():.2f}%")
+    logger.info(f"Median max loss: {summary['max_loss_pct'].median():.2f}%")
+    logger.info(f"Median max gain: {summary['max_gain_pct'].median():.2f}%")
+    unrecovered = (summary['end_cum_return'] < summary['start_cum_return']).sum()
+    logger.info(f"Stocks that ended below pre-crisis level by Dec 2012: {unrecovered} / {len(summary)}")
 
 def processed_data_exploration(processed_path, ff48_mapping, chunk_size=500_000):
     """Explore processed data with industry distribution and key metrics."""
@@ -332,6 +417,22 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     # Sort by firm count for FF48
     industry_df_48_pie = industry_df_48_pie.sort_values('num_firms', ascending=False)
     
+    # Group industries under 1.8% into 'Other'
+    industry_df_48_pie = industry_df_48_pie.copy()
+    industry_df_48_pie['percent'] = industry_df_48_pie['num_firms'] / total_firms * 100
+
+    # Separate large and small industries
+    large_industries = industry_df_48_pie[industry_df_48_pie['percent'] >= 1.8].copy()
+    small_industries = industry_df_48_pie[industry_df_48_pie['percent'] < 1.8]
+
+    # Sum small industries into 'Other'
+    if not small_industries.empty:
+        other_row = pd.DataFrame({
+            'industry_name': ['Assigned other'],
+            'num_firms': [small_industries['num_firms'].sum()],
+            'percent': [small_industries['percent'].sum()]
+        })
+        industry_df_48_pie = pd.concat([large_industries, other_row], ignore_index=True)
     # FF48 Donut Chart with dark-to-light blue coloring
     colors_48 = sns.color_palette("Blues", len(industry_df_48_pie))[::-1]  # Dark to light Blues
     plt.figure(figsize=(12, 12))
@@ -520,6 +621,8 @@ def main():
     try:
         data = load_data()
         raw_data_overview(data)
+        covid19_shock_analysis(data['processed_path'])
+        financial_crisis_shock_analysis(data['processed_path'])
         processed_data_exploration(data['processed_path'], data['ff48_mapping'])
         fama_french_analysis(data['fama_french'])
         logger.info("Data exploration completed!")

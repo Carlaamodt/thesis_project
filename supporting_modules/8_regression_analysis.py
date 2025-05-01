@@ -74,27 +74,24 @@ def run_rolling_regression(df: pd.DataFrame, ga_column: str = 'ga_factor_vw', wi
     """
     Perform rolling 36-month regression of GA factor on FF5+MOM factors.
 
-    Args:
-        df (pd.DataFrame): Merged DataFrame with GA factor and FF factors.
-        ga_column (str): Column name of the GA factor to regress (default: 'ga_factor_vw').
-        window (int): Size of the rolling window in months (default: 36).
-
     Returns:
         pd.DataFrame: Rolling regression results with alpha, betas, and t-stats.
     """
     factors = ['mkt_rf', 'smb', 'hml', 'rmw', 'cma', 'mom']
     results = []
 
-    # Ensure dates are sorted
     df = df.sort_index()
     dates = df.index.unique()
 
-    # Rolling window
+    skipped_windows = 0
+
     for i in range(window, len(dates) + 1):
         window_df = df.iloc[i - window:i]
         end_date = window_df.index[-1]
+
         if len(window_df) < window:
-            logger.warning(f"Window ending {end_date} has {len(window_df)} months (< {window})")
+            logger.warning(f"Window ending {end_date} has only {len(window_df)} months (< {window})")
+            skipped_windows += 1
             continue
 
         y = window_df[ga_column]
@@ -102,6 +99,7 @@ def run_rolling_regression(df: pd.DataFrame, ga_column: str = 'ga_factor_vw', wi
 
         if y.isna().mean() > 0.5 or X.isna().any().mean() > 0.5:
             logger.warning(f"Skipping window ending {end_date}: Too many NaNs")
+            skipped_windows += 1
             continue
 
         model = sm.OLS(y, X, missing='drop').fit(cov_type='HAC', cov_kwds={'maxlags': 3})
@@ -127,7 +125,20 @@ def run_rolling_regression(df: pd.DataFrame, ga_column: str = 'ga_factor_vw', wi
         }
         results.append(res)
 
-    return pd.DataFrame(results)
+    # Convert to DataFrame
+    result_df = pd.DataFrame(results)
+
+    # Log summary stats
+    logger.info(f"Total rolling windows attempted: {len(dates) - window + 1}")
+    logger.info(f"Successful windows: {len(result_df)}")
+    logger.info(f"Skipped windows: {skipped_windows}")
+
+    if not result_df.empty:
+        logger.info(f"Mean Alpha: {result_df['Alpha'].mean():.4f}")
+        logger.info(f"Mean Alpha t-stat: {result_df['Alpha t-stat'].mean():.2f}")
+        logger.info(f"Mean R-squared: {result_df['R-squared'].mean():.4f}")
+
+    return result_df
 
 # ----------------------------
 # Main Function
@@ -189,7 +200,7 @@ def main():
             csv_path = os.path.join(output_dir, f"{ga_name.lower()}_rolling_regression.csv")
             df.to_csv(csv_path, index=False)
             logger.info(f"Saved {ga_name} CSV to {csv_path}")
-
+    logger.info(f"Total rolling windows used: {len(ga_name)}")
     logger.info(f"All rolling regression results saved to {output_path}")
 
 # ----------------------------
