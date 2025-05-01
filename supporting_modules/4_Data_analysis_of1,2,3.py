@@ -406,10 +406,10 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     
     # Group small industries (<1%) into "Other" for the donut chart
     industry_df_48_pie = industry_df_48[industry_df_48['num_firms'] > 0].copy()
-    small_industries = industry_df_48_pie[industry_df_48_pie['percentage'] < 1.0]
+    small_industries = industry_df_48_pie[industry_df_48_pie['percentage'] < 0.0]
     if not small_industries.empty:
         other_count = small_industries['num_firms'].sum()
-        industry_df_48_pie = industry_df_48_pie[industry_df_48_pie['percentage'] >= 1.0]
+        industry_df_48_pie = industry_df_48_pie[industry_df_48_pie['percentage'] >= 0.0]
         industry_df_48_pie.loc[48, 'num_firms'] = other_count
         industry_df_48_pie.loc[48, 'industry_name'] = 'Other'
         industry_df_48_pie.loc[48, 'percentage'] = (other_count / total_firms * 100).round(2)
@@ -417,13 +417,13 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     # Sort by firm count for FF48
     industry_df_48_pie = industry_df_48_pie.sort_values('num_firms', ascending=False)
     
-    # Group industries under 1.8% into 'Other'
+    # Group industries under 1.5% into 'Other'
     industry_df_48_pie = industry_df_48_pie.copy()
     industry_df_48_pie['percent'] = industry_df_48_pie['num_firms'] / total_firms * 100
 
     # Separate large and small industries
-    large_industries = industry_df_48_pie[industry_df_48_pie['percent'] >= 1.8].copy()
-    small_industries = industry_df_48_pie[industry_df_48_pie['percent'] < 1.8]
+    large_industries = industry_df_48_pie[industry_df_48_pie['percent'] >= 1.5].copy()
+    small_industries = industry_df_48_pie[industry_df_48_pie['percent'] < 1.5]
 
     # Sum small industries into 'Other'
     if not small_industries.empty:
@@ -460,17 +460,32 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
     
-    # Bar chart for top 10 FF48 industries (sorted by num_firms)
-    top_10_df = industry_df_48_pie.head(10)  # Use the sorted DataFrame
+    # Bar chart for top 10 FF48 industries (sorted by num_firms, descending)
+    top_10_df = industry_df_48_pie.sort_values('num_firms', ascending=False).head(10)
+
     plt.figure(figsize=(12, 6))
-    sns.barplot(x='num_firms', y='industry_name', hue='industry_name', data=top_10_df, palette='viridis', legend=False)
+
+    # Dark-to-light blue palette
+    blue_palette = sns.color_palette("Blues", len(top_10_df))[::-1]  # reverse: darkest first
+
+    sns.barplot(
+        x='num_firms',
+        y='industry_name',
+        data=top_10_df,
+        palette=blue_palette,
+        legend=False
+    )
     plt.title('Top 10 Fama-French 48 Industries by Firm Count')
     plt.xlabel('Number of Firms')
     plt.ylabel('Industry')
-    plt.savefig(os.path.join(output_dir, get_output_filename("ff48_top_10_industries_bar.png")), bbox_inches='tight')
+
+    plt.savefig(
+        os.path.join(output_dir, get_output_filename("ff48_top_10_industries_bar.png")),
+        bbox_inches='tight'
+    )
     plt.close()
     logger.info(f"Top 10 FF48 industries bar chart saved as file4_{output_counter-1:03d}")
-    
+        
     # Map to 10 industries
     industry_df_48['broad_category'] = industry_df_48.index.map(map_ff48_to_10_industries)
     industry_df_10 = industry_df_48.groupby('broad_category').agg({'num_firms': 'sum'}).reset_index()
