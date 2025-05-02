@@ -1,0 +1,142 @@
+2025-05-02 14:36:53,457 - INFO - __main__ - Output directory set to /Users/carlaamodt/thesis_project/File_4_analysis
+2025-05-02 14:36:53,458 - INFO - __main__ - Starting data exploration...
+2025-05-02 14:36:53,458 - INFO - __main__ - Loading data files...
+2025-05-02 14:36:53,458 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/compustat_20250501.csv
+2025-05-02 14:36:53,459 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_ret_20250501.csv
+2025-05-02 14:36:53,459 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_delist_20250501.csv
+2025-05-02 14:36:53,460 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_compustat_20250501.csv
+2025-05-02 14:36:55,004 - INFO - __main__ - Loading FF48 mapping from /Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx
+2025-05-02 14:36:55,864 - INFO - __main__ - Loaded 598 SIC ranges into FF48 mapping
+2025-05-02 14:36:55,864 - INFO - __main__ - All data files loaded successfully
+2025-05-02 14:36:55,864 - INFO - __main__ - Generating raw data overview...
+2025-05-02 14:36:55,878 - INFO - __main__ - Compustat overview saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_001_compustat_overview.csv
+2025-05-02 14:36:55,927 - INFO - __main__ - Compustat key variables stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_002_compustat_key_vars_stats.csv
+2025-05-02 14:36:56,846 - INFO - __main__ - Goodwill distribution plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_003_goodwill_distribution.png
+2025-05-02 14:36:56,846 - INFO - __main__ - Calculating cumulative impairments and goodwill balance...
+2025-05-02 14:36:57,118 - INFO - __main__ - Goodwill impairments and balance saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_004_goodwill_impairments_and_balance.xlsx
+2025-05-02 14:36:57,152 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:36:57,155 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:36:57,260 - INFO - __main__ - Impairments over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_005_impairments_over_time.png
+2025-05-02 14:36:57,319 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:36:57,320 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:36:57,439 - INFO - __main__ - Goodwill vs impairments plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_006_goodwill_vs_impairments.png
+2025-05-02 14:36:57,440 - INFO - __main__ - Peak impairment year: 2008.0 with impairment of -448,683.02
+2025-05-02 14:36:57,440 - INFO - __main__ - Highest goodwill year: 2023.0 with goodwill of 7,589,502.39
+2025-05-02 14:36:57,440 - INFO - __main__ - Years with net goodwill shrinkage: [2008]
+2025-05-02 14:36:57,440 - INFO - __main__ - Analyzing goodwill impairment data...
+2025-05-02 14:36:57,546 - INFO - __main__ - Top 10 impairments and insights saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_007_top10_impairments.xlsx
+2025-05-02 14:36:57,546 - INFO - __main__ - Goodwill Impairment Insights:
+2025-05-02 14:36:57,546 - INFO - __main__ - - Total number of impairment events: 66.00
+2025-05-02 14:36:57,546 - INFO - __main__ - - Unique firms with impairments: 48.00
+2025-05-02 14:36:57,546 - INFO - __main__ - - Median impairment size: 3.73
+2025-05-02 14:36:57,546 - INFO - __main__ - - Average impairment size: 22.27
+2025-05-02 14:36:57,546 - INFO - __main__ - - Maximum impairment size: 292.27
+2025-05-02 14:36:57,615 - INFO - __main__ - Yearly impairments over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_008_yearly_impairments_over_time.png
+2025-05-02 14:36:57,615 - INFO - __main__ - Starting COVID-19 impact analysis...
+2025-05-02 14:37:01,173 - INFO - __main__ - COVID-19 analysis on 2458 stocks:
+2025-05-02 14:37:01,174 - INFO - __main__ - Average max loss: -23.36%
+2025-05-02 14:37:01,174 - INFO - __main__ - Average max gain: 296.93%
+2025-05-02 14:37:01,174 - INFO - __main__ - Median max loss: -9.66%
+2025-05-02 14:37:01,174 - INFO - __main__ - Median max gain: 148.97%
+2025-05-02 14:37:01,174 - INFO - __main__ - Stocks below pre-COVID level by May 2023: 944 / 2458
+2025-05-02 14:37:01,178 - INFO - __main__ - Starting Financial Crisis impact analysis...
+2025-05-02 14:37:04,549 - INFO - __main__ - Financial Crisis analysis on 1814 stocks:
+2025-05-02 14:37:04,549 - INFO - __main__ - Average max loss: -51.12%
+2025-05-02 14:37:04,549 - INFO - __main__ - Average max gain: 332.31%
+2025-05-02 14:37:04,550 - INFO - __main__ - Median max loss: -53.83%
+2025-05-02 14:37:04,550 - INFO - __main__ - Median max gain: 196.05%
+2025-05-02 14:37:04,550 - INFO - __main__ - Stocks below pre-crisis level by Dec 2012: 957 / 1814
+2025-05-02 14:37:04,555 - INFO - __main__ - Exploring processed data...
+2025-05-02 14:37:07,872 - INFO - __main__ - Processed data: 4256 firms, 4275 stocks, 376072 rows
+2025-05-02 14:37:07,881 - INFO - __main__ - Processed data stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_009_processed_data_stats.csv
+2025-05-02 14:37:07,881 - INFO - __main__ - Generating industry distribution visualizations...
+2025-05-02 14:37:10,656 - INFO - __main__ - Firms with SIC: 4204, Firms without SIC: 52
+2025-05-02 14:37:10,684 - INFO - __main__ - FF48 industry distribution saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_010_ff48_industry_distribution.csv
+2025-05-02 14:37:10,906 - INFO - __main__ - Top 10 FF48 industries bar chart saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_012_ff48_top_10_industries_bar.png
+2025-05-02 14:37:10,990 - INFO - __main__ - 10-industry distribution saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_014_10_industry_distribution.csv
+2025-05-02 14:37:14,330 - INFO - __main__ - Firms over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_016_firms_over_time.png
+2025-05-02 14:37:14,330 - INFO - __main__ - Generating goodwill trends by major industry...
+2025-05-02 14:37:22,724 - INFO - __main__ - Goodwill trends by industry saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_017_goodwill_trends_by_industry_stacked.png
+2025-05-02 14:37:22,742 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:37:22,744 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:37:23,002 - INFO - __main__ - Grouped goodwill trends by industry saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_018_goodwill_trends_by_industry_grouped.png
+2025-05-02 14:37:23,017 - INFO - __main__ - Calculating average market cap for NYSE, AMEX, NASDAQ...
+2025-05-02 14:37:26,478 - INFO - __main__ - Market cap summary saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_019_market_cap.csv
+2025-05-02 14:37:26,593 - INFO - __main__ - Smooth average market cap trend plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_020_market_cap_trend_smooth_millions_2004on.png
+2025-05-02 14:37:26,607 - INFO - __main__ - Analyzing Fama-French factors...
+2025-05-02 14:37:26,614 - INFO - __main__ - Fama-French overview saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_021_fama_french_overview.csv
+2025-05-02 14:37:26,625 - INFO - __main__ - Fama-French stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_022_fama_french_stats.csv
+2025-05-02 14:37:26,728 - INFO - __main__ - Fama-French correlation heatmap saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_023_fama_french_correlation_heatmap.png
+2025-05-02 14:37:26,728 - INFO - __main__ - Data exploration completed successfully
+2025-05-02 14:40:59,526 - INFO - __main__ - Output directory set to /Users/carlaamodt/thesis_project/File_4_analysis
+2025-05-02 14:40:59,527 - INFO - __main__ - Starting data exploration...
+2025-05-02 14:40:59,527 - INFO - __main__ - Loading data files...
+2025-05-02 14:40:59,527 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/compustat_20250501.csv
+2025-05-02 14:40:59,528 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_ret_20250501.csv
+2025-05-02 14:40:59,528 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_delist_20250501.csv
+2025-05-02 14:40:59,529 - INFO - __main__ - Loading latest file: /Users/carlaamodt/thesis_project/data/crsp_compustat_20250501.csv
+2025-05-02 14:41:01,025 - INFO - __main__ - Loading FF48 mapping from /Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx
+2025-05-02 14:41:01,211 - INFO - __main__ - Loaded 598 SIC ranges into FF48 mapping
+2025-05-02 14:41:01,211 - INFO - __main__ - All data files loaded successfully
+2025-05-02 14:41:01,211 - INFO - __main__ - Generating raw data overview...
+2025-05-02 14:41:01,219 - INFO - __main__ - Compustat overview saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_001_compustat_overview.csv
+2025-05-02 14:41:01,257 - INFO - __main__ - Compustat key variables stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_002_compustat_key_vars_stats.csv
+2025-05-02 14:41:01,943 - INFO - __main__ - Goodwill distribution plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_003_goodwill_distribution.png
+2025-05-02 14:41:01,943 - INFO - __main__ - Calculating cumulative impairments and goodwill balance...
+2025-05-02 14:41:02,060 - INFO - __main__ - Goodwill impairments and balance saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_004_goodwill_impairments_and_balance.xlsx
+2025-05-02 14:41:02,079 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:02,081 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:02,182 - INFO - __main__ - Impairments over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_005_impairments_over_time.png
+2025-05-02 14:41:02,211 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:02,213 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:02,327 - INFO - __main__ - Goodwill vs impairments plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_006_goodwill_vs_impairments.png
+2025-05-02 14:41:02,327 - INFO - __main__ - Peak impairment year: 2008.0 with impairment of -448,683.02
+2025-05-02 14:41:02,327 - INFO - __main__ - Highest goodwill year: 2023.0 with goodwill of 7,589,502.39
+2025-05-02 14:41:02,328 - INFO - __main__ - Years with net goodwill shrinkage: [2008]
+2025-05-02 14:41:02,328 - INFO - __main__ - Analyzing goodwill impairment data...
+2025-05-02 14:41:02,437 - INFO - __main__ - Top 10 impairments and insights saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_007_top10_impairments.xlsx
+2025-05-02 14:41:02,437 - INFO - __main__ - Goodwill Impairment Insights:
+2025-05-02 14:41:02,437 - INFO - __main__ - - Total number of impairment events: 66.00
+2025-05-02 14:41:02,437 - INFO - __main__ - - Unique firms with impairments: 48.00
+2025-05-02 14:41:02,437 - INFO - __main__ - - Median impairment size: 3.73
+2025-05-02 14:41:02,437 - INFO - __main__ - - Average impairment size: 22.27
+2025-05-02 14:41:02,437 - INFO - __main__ - - Maximum impairment size: 292.27
+2025-05-02 14:41:02,511 - INFO - __main__ - Yearly impairments over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_008_yearly_impairments_over_time.png
+2025-05-02 14:41:02,511 - INFO - __main__ - Starting COVID-19 impact analysis...
+2025-05-02 14:41:06,077 - INFO - __main__ - COVID-19 analysis on 2458 stocks:
+2025-05-02 14:41:06,078 - INFO - __main__ - Average max loss: -23.36%
+2025-05-02 14:41:06,078 - INFO - __main__ - Average max gain: 296.93%
+2025-05-02 14:41:06,078 - INFO - __main__ - Median max loss: -9.66%
+2025-05-02 14:41:06,078 - INFO - __main__ - Median max gain: 148.97%
+2025-05-02 14:41:06,078 - INFO - __main__ - Stocks below pre-COVID level by May 2023: 944 / 2458
+2025-05-02 14:41:06,081 - INFO - __main__ - Starting Financial Crisis impact analysis...
+2025-05-02 14:41:09,406 - INFO - __main__ - Financial Crisis analysis on 1814 stocks:
+2025-05-02 14:41:09,407 - INFO - __main__ - Average max loss: -51.12%
+2025-05-02 14:41:09,407 - INFO - __main__ - Average max gain: 332.31%
+2025-05-02 14:41:09,407 - INFO - __main__ - Median max loss: -53.83%
+2025-05-02 14:41:09,407 - INFO - __main__ - Median max gain: 196.05%
+2025-05-02 14:41:09,407 - INFO - __main__ - Stocks below pre-crisis level by Dec 2012: 957 / 1814
+2025-05-02 14:41:09,410 - INFO - __main__ - Exploring processed data...
+2025-05-02 14:41:12,687 - INFO - __main__ - Processed data: 4256 firms, 4275 stocks, 376072 rows
+2025-05-02 14:41:12,690 - INFO - __main__ - Processed data stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_009_processed_data_stats.csv
+2025-05-02 14:41:12,690 - INFO - __main__ - Generating industry distribution visualizations...
+2025-05-02 14:41:15,533 - INFO - __main__ - Firms with SIC: 4204, Firms without SIC: 52
+2025-05-02 14:41:15,553 - INFO - __main__ - FF48 industry distribution saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_010_ff48_industry_distribution.csv
+2025-05-02 14:41:15,672 - INFO - __main__ - FF48 industry distribution donut saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_011_ff48_industry_distribution_donut.png
+2025-05-02 14:41:15,761 - INFO - __main__ - Top 10 FF48 industries bar chart saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_012_ff48_top_10_industries_bar.png
+2025-05-02 14:41:15,838 - INFO - __main__ - 10-industry distribution donut saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_013_10_industry_distribution_donut.png
+2025-05-02 14:41:15,839 - INFO - __main__ - 10-industry distribution saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_014_10_industry_distribution.csv
+2025-05-02 14:41:19,200 - INFO - __main__ - Firms over time plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_016_firms_over_time.png
+2025-05-02 14:41:19,200 - INFO - __main__ - Generating goodwill trends by major industry...
+2025-05-02 14:41:27,435 - INFO - __main__ - Goodwill trends by industry saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_017_goodwill_trends_by_industry_stacked.png
+2025-05-02 14:41:27,454 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:27,455 - INFO - matplotlib.category - Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+2025-05-02 14:41:27,705 - INFO - __main__ - Grouped goodwill trends by industry saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_018_goodwill_trends_by_industry_grouped.png
+2025-05-02 14:41:27,718 - INFO - __main__ - Calculating average market cap for NYSE, AMEX, NASDAQ...
+2025-05-02 14:41:31,184 - INFO - __main__ - Market cap summary saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_019_market_cap.csv
+2025-05-02 14:41:31,292 - INFO - __main__ - Smooth average market cap trend plot saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_020_market_cap_trend_smooth_millions_2004on.png
+2025-05-02 14:41:31,305 - INFO - __main__ - Analyzing Fama-French factors...
+2025-05-02 14:41:31,307 - INFO - __main__ - Fama-French overview saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_021_fama_french_overview.csv
+2025-05-02 14:41:31,311 - INFO - __main__ - Fama-French stats saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_022_fama_french_stats.csv
+2025-05-02 14:41:31,408 - INFO - __main__ - Fama-French correlation heatmap saved to /Users/carlaamodt/thesis_project/File_4_analysis/file4_023_fama_french_correlation_heatmap.png
+2025-05-02 14:41:31,408 - INFO - __main__ - Data exploration completed successfully
