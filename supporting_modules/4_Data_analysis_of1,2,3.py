@@ -205,7 +205,176 @@ def raw_data_overview(data):
     plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_distribution.png")), bbox_inches='tight')
     plt.close()
     logger.info(f"Goodwill distribution plot saved as file4_{output_counter-1:03d}")
-   
+        # NEW: Accumulated Impairments and Goodwill Balance Over Time
+    logger.info("Calculating cumulative impairments and goodwill balance over time...")
+    
+    compustat_clean = compustat.dropna(subset=['gdwl']).copy()
+    compustat_clean['year'] = compustat_clean['date'].dt.year
+
+    agg_df = (
+        compustat_clean.groupby('year')
+        .agg(
+            total_goodwill=('gdwl', 'sum'),
+            total_impairment=('gdwlip', 'sum')
+        )
+        .fillna(0)
+        .sort_index()
+        .reset_index()
+    )
+
+    # Calculate delta and cumulative
+    agg_df['delta_goodwill'] = agg_df['total_goodwill'].diff()
+    agg_df['cumulative_impairments'] = agg_df['total_impairment'].cumsum()
+
+    # Save Excel
+    excel_path = os.path.join(output_dir, get_output_filename("goodwill_impairments_and_balance.xlsx"))
+    with pd.ExcelWriter(excel_path) as writer:
+        agg_df.to_excel(writer, index=False, sheet_name='Goodwill_Impairments')
+
+    # Plot 1: Annual impairments + cumulative impairments
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=agg_df, x='year', y='total_impairment', color='lightblue', label='Annual Impairments')
+    plt.plot(agg_df['year'], agg_df['cumulative_impairments'], label='Cumulative Impairments', linewidth=2)
+    plt.title('Goodwill Impairments Over Time')
+    plt.xlabel('Year')
+    plt.ylabel('Impairment Amount')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, get_output_filename("impairments_over_time.png")), bbox_inches='tight')
+    plt.close()
+
+    # Plot 2: Goodwill balance vs annual impairments (dual axis)
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    sns.lineplot(data=agg_df, x='year', y='total_goodwill', ax=ax1, label='Total Goodwill', linewidth=2, color='navy')
+    ax1.set_ylabel('Total Goodwill')
+    ax1.set_xlabel('Year')
+    ax1.tick_params(axis='y')
+
+    ax2 = ax1.twinx()
+    sns.barplot(data=agg_df, x='year', y='total_impairment', ax=ax2, color='lightcoral', alpha=0.5, label='Annual Impairments')
+    ax2.set_ylabel('Annual Impairments')
+
+    fig.suptitle('Total Goodwill vs Annual Impairments')
+    fig.legend(loc='upper right')
+    fig.tight_layout()
+    plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_vs_impairments.png")), bbox_inches='tight')
+    plt.close()
+
+    # Log key stats
+    # Ensure numeric type for total_impairment to avoid any dtype issues
+    agg_df['total_impairment'] = pd.to_numeric(agg_df['total_impairment'], errors='coerce')
+
+    # Find peak impairment year based on absolute impairment value
+    peak_row = agg_df.loc[agg_df['total_impairment'].abs().idxmax()]
+    peak_impairment_year = peak_row['year']
+    peak_impairment_value = peak_row['total_impairment']
+
+    logger.info(f"Peak impairment year (by total impairment amount): {peak_impairment_year} "
+                f"with impairment of {peak_impairment_value:,.2f}")
+
+    # Find year with highest goodwill balance
+    highest_gw_row = agg_df.loc[agg_df['total_goodwill'].idxmax()]
+    highest_goodwill_year = highest_gw_row['year']
+    highest_goodwill_value = highest_gw_row['total_goodwill']
+
+    logger.info(f"Highest goodwill year: {highest_goodwill_year} "
+                f"with goodwill of {highest_goodwill_value:,.2f}")
+
+    # Identify years with net goodwill shrinkage
+    net_shrink_years = agg_df.loc[agg_df['delta_goodwill'] < 0, 'year'].tolist()
+    logger.info(f"Years with net goodwill shrinkage: {net_shrink_years}")
+    # NEW: Goodwill Impairment Analysis
+    goodwill_impairment_analysis(compustat, data['ff48_mapping'])
+
+def goodwill_impairment_analysis(compustat, ff48_mapping):
+    logger.info("Analyzing goodwill impairment data (gdwlip)...")
+    impairment_df = compustat.dropna(subset=['gdwlip']).copy()
+    impairment_df = impairment_df[impairment_df['gdwlip'] > 0]
+
+    if impairment_df.empty:
+        logger.warning("No goodwill impairments found in the dataset.")
+        return
+
+    impairment_df['ff48'] = impairment_df['sich'].apply(lambda x: map_sic_to_ff48(x, ff48_mapping))
+    impairment_df['broad_category'] = impairment_df['ff48'].map(map_ff48_to_10_industries)
+
+    # Get the row with max impairment per firm
+    max_rows = impairment_df.loc[
+        impairment_df.groupby('gvkey')['gdwlip'].idxmax()
+    ].copy()
+
+    # Add ratios to goodwill and common equity
+    max_rows['gdwl'] = compustat.set_index(['gvkey', 'date']).loc[
+        list(zip(max_rows['gvkey'], max_rows['date'])), 'gdwl'
+    ].values
+    max_rows['ceq'] = compustat.set_index(['gvkey', 'date']).loc[
+        list(zip(max_rows['gvkey'], max_rows['date'])), 'ceq'
+    ].values
+
+    # Avoid division by zero
+    max_rows['Impairment_to_Goodwill_%'] = (max_rows['gdwlip'] / max_rows['gdwl'].replace(0, np.nan)) * 100
+    max_rows['Impairment_to_Equity_%'] = (max_rows['gdwlip'] / max_rows['ceq'].replace(0, np.nan)) * 100
+
+    top10_impairments = (
+        max_rows[['gvkey', 'broad_category', 'gdwlip', 'gdwl', 'ceq', 'Impairment_to_Goodwill_%', 'Impairment_to_Equity_%']]
+        .rename(columns={
+            'gdwlip': 'Max_Impairment',
+            'gdwl': 'Goodwill',
+            'ceq': 'Common_Equity'
+        })
+        .sort_values(by='Max_Impairment', ascending=False)
+        .head(10)
+    )
+
+    median_impairment = impairment_df['gdwlip'].median()
+    insights = {
+        'Total number of impairment events': len(impairment_df),
+        'Unique firms with impairments': impairment_df['gvkey'].nunique(),
+        'Median impairment size': median_impairment,
+        'Average impairment size': impairment_df['gdwlip'].mean(),
+        'Maximum impairment size': impairment_df['gdwlip'].max(),
+    }
+
+    output_path = os.path.join(output_dir, get_output_filename("top10_impairments.xlsx"))
+    with pd.ExcelWriter(output_path) as writer:
+        top10_impairments.to_excel(writer, index=False, sheet_name='Top10_Impairments')
+
+        industry_impairments = (
+            impairment_df.groupby('broad_category')['gdwlip']
+            .agg(['count', 'sum', 'median', 'mean', 'max'])
+            .reset_index()
+            .sort_values(by='sum', ascending=False)
+        )
+        industry_impairments.to_excel(writer, index=False, sheet_name='Industry_Breakdown')
+
+        pd.DataFrame(list(insights.items()), columns=['Metric', 'Value']).to_excel(writer, index=False, sheet_name='Insights')
+
+    logger.info(f"Top 10 impairments and insights saved to {output_path}")
+
+    # Log key insights
+    logger.info("Goodwill Impairment Insights:")
+    for k, v in insights.items():
+        logger.info(f"- {k}: {v:,.2f}")
+
+    # Plot impairment levels over time
+    impairment_df['year'] = pd.to_datetime(impairment_df['date']).dt.year
+    yearly_impairments = impairment_df.groupby('year')['gdwlip'].sum().reset_index()
+
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=yearly_impairments, x='year', y='gdwlip', marker='o')
+    plt.title("Total Goodwill Impairments Over Time")
+    plt.xlabel("Year")
+    plt.ylabel("Total Impairments")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, get_output_filename("impairments_over_time.png")), bbox_inches='tight')
+    plt.close()
+    logger.info("Impairments over time plot saved.")
+
+
+    # Log key insights for quick view
+    logger.info("Goodwill Impairment Insights:")
+    for k, v in insights.items():
+        logger.info(f"- {k}: {v:,.2f}")   
 ########################################
 ### Processed Data Exploration ###
 ########################################
