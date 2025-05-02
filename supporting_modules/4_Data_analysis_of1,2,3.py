@@ -5,6 +5,7 @@ import seaborn as sns
 import os
 import glob
 import logging
+from scipy.interpolate import make_interp_spline
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -204,7 +205,7 @@ def raw_data_overview(data):
     plt.savefig(os.path.join(output_dir, get_output_filename("goodwill_distribution.png")), bbox_inches='tight')
     plt.close()
     logger.info(f"Goodwill distribution plot saved as file4_{output_counter-1:03d}")
-
+   
 ########################################
 ### Processed Data Exploration ###
 ########################################
@@ -348,6 +349,108 @@ def processed_data_exploration(processed_path, ff48_mapping, chunk_size=500_000)
     # Additional analysis: Goodwill trends by major industry
     plot_goodwill_trends(processed_path, ff48_mapping, industry_data['industry_df_10'], chunk_size)
 
+        # ------------------------
+        # ------------------------
+    # NEW: Average Market Cap (NYSE, AMEX, NASDAQ)
+    # ------------------------
+    logger.info("Calculating average market cap for NYSE, AMEX, NASDAQ exchanges...")
+
+    market_cap_all = []
+    for chunk in pd.read_csv(
+        processed_path,
+        chunksize=chunk_size,
+        parse_dates=['crsp_date'],
+        dtype={'exchcd': 'float', 'market_cap': 'float'},
+        low_memory=False
+    ):
+        chunk = chunk.dropna(subset=['exchcd', 'market_cap'])
+        chunk = chunk[chunk['exchcd'].isin([1, 2, 3])]
+        chunk['year'] = chunk['crsp_date'].dt.year
+        market_cap_all.append(chunk[['year', 'exchcd', 'market_cap']])
+
+    if market_cap_all:
+        df_mc = pd.concat(market_cap_all)
+
+        # Map exchange codes to names
+        exchange_map = {1: 'NYSE', 2: 'AMEX', 3: 'NASDAQ'}
+        df_mc['Exchange'] = df_mc['exchcd'].map(exchange_map)
+
+        # Overall average market cap (whole period)
+        overall_avg = df_mc.groupby('Exchange')['market_cap'].mean().reset_index()
+        overall_avg['year'] = 'Overall'
+        overall_avg = overall_avg[['year', 'Exchange', 'market_cap']]
+        overall_avg.columns = ['Year', 'Exchange', 'Avg_Market_Cap']
+
+        # Year-over-year average market cap
+        yoy_avg = df_mc.groupby(['year', 'Exchange'])['market_cap'].mean().reset_index()
+        yoy_avg.columns = ['Year', 'Exchange', 'Avg_Market_Cap']
+
+        # Combine overall + yearly into one DataFrame
+        summary_df = pd.concat([yoy_avg, overall_avg], ignore_index=True)
+
+        # Save to CSV
+        summary_df.to_csv(os.path.join(output_dir, get_output_filename("market_cap.csv")), index=False)
+        logger.info(f"Market cap summary saved as file4_{output_counter-1:03d}")
+
+                 # New Plot: Year-over-year average market cap (in millions) with smoothed blue shades
+        logger.info("Plotting smooth average market cap over time (in millions) with blue shades...")
+
+        # Prepare data: convert to millions & exclude 'Overall'
+        yoy_avg_million = yoy_avg.copy()
+        yoy_avg_million = yoy_avg_million[yoy_avg_million['Year'] != 'Overall'].copy()
+        yoy_avg_million['Year'] = yoy_avg_million['Year'].astype(int)
+        yoy_avg_million = yoy_avg_million[yoy_avg_million['Year'] >= 2004]  # Start from 2004
+        yoy_avg_million['Avg_Market_Cap_Million'] = yoy_avg_million['Avg_Market_Cap'] / 1e6
+
+        plt.figure(figsize=(12, 6))
+        blue_palette = {
+            'NYSE': '#08306b',    # Dark Blue
+            'NASDAQ': '#2171b5',    # Medium Blue
+            'AMEX': '#6baed6'   # Light Blue
+        }
+
+        # For each exchange: smooth line + scatter points
+        for exchange in yoy_avg_million['Exchange'].unique():
+            data = yoy_avg_million[yoy_avg_million['Exchange'] == exchange].sort_values('Year')
+            years = data['Year']
+            mcaps = data['Avg_Market_Cap_Million']
+
+            if len(years) >= 3:
+                # Use spline for smooth curve
+                from scipy.interpolate import make_interp_spline
+
+                xnew = np.linspace(years.min(), years.max(), 300)
+                spl = make_interp_spline(years, mcaps, k=3)
+                y_smooth = spl(xnew)
+                plt.plot(xnew, y_smooth, label=exchange, color=blue_palette.get(exchange), linewidth=2.5)
+                # Add scatter points at original data
+                plt.scatter(years, mcaps, color=blue_palette.get(exchange), s=40)
+            else:
+                # Not enough points for spline, just plot line
+                plt.plot(years, mcaps, label=exchange, color=blue_palette.get(exchange), linewidth=2.5, marker='o')
+
+        plt.title("Average Market Cap Over Time by Exchange (Since 2004)")
+        plt.xlabel("Year")
+        plt.ylabel("Average Market Cap (Millions)")
+
+        # Format y-axis as integer (no decimals)
+        ax = plt.gca()
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0f}'))
+
+        # Set x-axis ticks to full years only (no decimals)
+        years_to_show = sorted(yoy_avg_million['Year'].unique())
+        ax.set_xticks(years_to_show)
+        ax.set_xticklabels([str(y) for y in years_to_show])
+
+        plt.legend(title="Exchange")
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, get_output_filename("market_cap_trend_smooth_millions_2004on.png")), bbox_inches='tight')
+        plt.close()
+        logger.info(f"Smooth average market cap (millions, from 2004) trend plot saved as file4_{output_counter-1:03d}")
+
+    else:
+        logger.warning("No data found for exchanges 1, 2, 3 when calculating market cap.")
+    # ------------------------
 def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000, total_firms=None):
     """Create donut charts for FF48 and 10-industry distributions, plus a bar chart for top 10 FF48 industries."""
     logger.info("Generating industry distribution visualizations...")
