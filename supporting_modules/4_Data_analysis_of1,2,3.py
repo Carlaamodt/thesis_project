@@ -439,7 +439,8 @@ def processed_data_exploration(processed_path, ff48_mapping, chunk_size=500_000)
     
     plot_goodwill_trends(processed_path, ff48_mapping, industry_data['industry_df_10'], chunk_size)
 
-    logger.info("Calculating average market cap for NYSE, AMEX, NASDAQ...")
+    logger.info("Calculating median market cap for NYSE and All Exchanges...")
+
     market_cap_all = []
     for chunk in pd.read_csv(
         processed_path, chunksize=chunk_size, parse_dates=['crsp_date'],
@@ -454,51 +455,47 @@ def processed_data_exploration(processed_path, ff48_mapping, chunk_size=500_000)
         df_mc = pd.concat(market_cap_all)
         exchange_map = {1: 'NYSE', 2: 'AMEX', 3: 'NASDAQ'}
         df_mc['Exchange'] = df_mc['exchcd'].map(exchange_map)
-        overall_avg = df_mc.groupby('Exchange')['market_cap'].mean().reset_index()
-        overall_avg['year'] = 'Overall'
-        overall_avg = overall_avg[['year', 'Exchange', 'market_cap']]
-        overall_avg.columns = ['Year', 'Exchange', 'Avg_Market_Cap']
-        yoy_avg = df_mc.groupby(['year', 'Exchange'])['market_cap'].mean().reset_index()
-        yoy_avg.columns = ['Year', 'Exchange', 'Avg_Market_Cap']
-        summary_df = pd.concat([yoy_avg, overall_avg], ignore_index=True)
-        output_path = os.path.join(output_dir, get_output_filename("market_cap.csv"))
-        summary_df.to_csv(output_path, index=False)
-        logger.info(f"Market cap summary saved to {output_path}")
+        df_mc = df_mc[df_mc['year'] >= 2004]
 
-        yoy_avg_million = yoy_avg.copy()
-        yoy_avg_million = yoy_avg_million[yoy_avg_million['Year'] != 'Overall'].copy()
-        yoy_avg_million['Year'] = yoy_avg_million['Year'].astype(int)
-        yoy_avg_million = yoy_avg_million[yoy_avg_million['Year'] >= 2004]
-        yoy_avg_million['Avg_Market_Cap_Million'] = yoy_avg_million['Avg_Market_Cap'] / 1e6
+        # Compute medians
+        nyse_df = df_mc[df_mc['Exchange'] == 'NYSE']
+        nyse_median = nyse_df.groupby('year')['market_cap'].median().reset_index()
+        nyse_median['Exchange'] = 'NYSE'
+
+        all_median = df_mc.groupby('year')['market_cap'].median().reset_index()
+        all_median['Exchange'] = 'All'
+
+        plot_df = pd.concat([nyse_median, all_median], ignore_index=True)
+        plot_df['Market_Cap_Million'] = plot_df['market_cap'] / 1e6
 
         plt.figure(figsize=(12, 6))
-        blue_palette = {'NYSE': '#08306b', 'NASDAQ': '#2171b5', 'AMEX': '#6baed6'}
-        for exchange in yoy_avg_million['Exchange'].unique():
-            data = yoy_avg_million[yoy_avg_million['Exchange'] == exchange].sort_values('Year')
-            years = data['Year']
-            mcaps = data['Avg_Market_Cap_Million']
+        color_map = {'NYSE': '#08306b', 'All': '#6baed6'}
+
+        for label, group in plot_df.groupby('Exchange'):
+            years = group['year'].values
+            mcaps = group['Market_Cap_Million'].values
             if len(years) >= 3:
                 xnew = np.linspace(years.min(), years.max(), 300)
                 spl = make_interp_spline(years, mcaps, k=3)
                 y_smooth = spl(xnew)
-                plt.plot(xnew, y_smooth, label=exchange, color=blue_palette.get(exchange), linewidth=2.5)
-                plt.scatter(years, mcaps, color=blue_palette.get(exchange), s=40)
-            else:
-                plt.plot(years, mcaps, label=exchange, color=blue_palette.get(exchange), linewidth=2.5, marker='o')
-        plt.title("Average Market Cap Over Time by Exchange (Since 2004)")
-        plt.xlabel("Year")
-        plt.ylabel("Average Market Cap (Millions)")
+                plt.plot(xnew, y_smooth, label=label, color=color_map[label], linewidth=2.5)
+
         ax = plt.gca()
+        ax.spines[['top', 'right']].set_visible(False)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0f}'))
-        years_to_show = sorted(yoy_avg_million['Year'].unique())
-        ax.set_xticks(years_to_show)
-        ax.set_xticklabels([str(y) for y in years_to_show])
-        plt.legend(title="Exchange")
+
+        xticks = sorted(plot_df['year'].unique())
+        ax.set_xticks(xticks[::2])  # every second year
+        ax.set_xticklabels([str(y) for y in xticks[::2]])
+
+        plt.ylabel("Median Market Cap (Millions)")
+        plt.legend(title=None)
         plt.tight_layout()
-        output_path = os.path.join(output_dir, get_output_filename("market_cap_trend_smooth_millions_2004on.png"))
+
+        output_path = os.path.join(output_dir, get_output_filename("market_cap_median_trend_smooth_nyse_all.png"))
         plt.savefig(output_path, bbox_inches='tight')
         plt.close()
-        logger.info(f"Smooth average market cap trend plot saved to {output_path}")
+        logger.info(f"Median market cap trend plot saved to {output_path}")
     else:
         logger.warning("No data found for exchanges 1, 2, 3 when calculating market cap.")
 
