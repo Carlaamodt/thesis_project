@@ -539,6 +539,8 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
     
     industry_df_48_pie = industry_df_48[industry_df_48['num_firms'] > 0].copy()
     industry_df_48_pie['percent'] = industry_df_48_pie['num_firms'] / total_firms * 100
+
+    # Separate small industries and create 'Assigned other'
     large_industries = industry_df_48_pie[industry_df_48_pie['percent'] >= 1.5].copy()
     small_industries = industry_df_48_pie[industry_df_48_pie['percent'] < 1.5]
     if not small_industries.empty:
@@ -547,25 +549,45 @@ def plot_industry_distributions(processed_path, ff48_mapping, chunk_size=500_000
             'num_firms': [small_industries['num_firms'].sum()],
             'percent': [small_industries['percent'].sum()]
         })
-        industry_df_48_pie = pd.concat([large_industries, other_row], ignore_index=True)
-    
-    colors_48 = sns.color_palette("Blues", len(industry_df_48_pie))[::-1]
+        large_industries = large_industries.sort_values('num_firms', ascending=True)
+        industry_df_48_pie = pd.concat([other_row, large_industries], ignore_index=True)
+    else:
+        industry_df_48_pie = industry_df_48_pie.sort_values('num_firms', ascending=True)
+
+    # Color palette: light → dark (Assigned other first)
+    colors_48 = sns.color_palette("Blues", len(industry_df_48_pie))
+
+    # Plot pie chart
     plt.figure(figsize=(12, 12))
     wedges, texts, autotexts = plt.pie(
-        industry_df_48_pie['num_firms'], labels=industry_df_48_pie['industry_name'],
-        autopct='%1.1f%%', startangle=90, colors=colors_48, textprops={'fontsize': 12},
-        labeldistance=1.1, pctdistance=0.85
+        industry_df_48_pie['num_firms'],
+        labels=industry_df_48_pie['industry_name'],
+        autopct='%1.1f%%',
+        startangle=90,
+        counterclock=False,
+        colors=colors_48,
+        textprops={'fontsize': 12, 'color': 'black'},
+        labeldistance=1.1,
+        pctdistance=0.85
     )
-    for text in texts:
-        text.set_fontsize(12)
-    for autotext in autotexts:
+
+    # White number (autotext) for darkest 2 slices only
+    for i, autotext in enumerate(autotexts):
+        if i >= len(industry_df_48_pie) - 2:  # last two = darkest
+            autotext.set_color('white')
         autotext.set_fontsize(10)
-    plt.text(0, 0, f'Total Firms\n{total_firms}', fontsize=14, ha='center', va='center', weight='bold')
+
+    # Center donut label
+    plt.text(0, 0, f'Total Firms\n{total_firms}', fontsize=25, ha='center', va='center', weight='bold')
+
+    # Create donut hole
     centre_circle = plt.Circle((0, 0), 0.70, fc='white')
-    fig = plt.gcf()
-    fig.gca().add_artist(centre_circle)
+    plt.gca().add_artist(centre_circle)
+
     plt.axis('equal')
     plt.title('Fama-French 48 Industry Distribution of Firms', fontsize=14, pad=20)
+
+    # Save
     output_path = os.path.join(output_dir, get_output_filename("ff48_industry_distribution_donut.png"))
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()

@@ -585,6 +585,40 @@ def industry_analysis(proc_df, decile_df, ff_df, ga_choice="goodwill_to_equity_l
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     logger.info(f"Saved industry alpha plot: {filepath}")
+  
+
+    # ---- Sort industries by median ----
+    summary_df = df.groupby('ff48_industry').agg(
+        mean=(ga_choice, 'mean'),
+        std=(ga_choice, 'std'),
+        median=(ga_choice, 'median'),
+        max=(ga_choice, 'max'),
+        count=('permno', 'nunique'),
+        total_market_cap=('market_cap', 'sum'),
+        first_decile=(ga_choice, lambda x: np.percentile(x.dropna(), 10)),
+        tenth_decile=(ga_choice, lambda x: np.percentile(x.dropna(), 90)),
+    ).reset_index()
+    summary_df = summary_df.sort_values('median')
+    # Compute decile percentiles and stats for goodwill_to_equity by industry
+    summary_df = df.groupby('ff48_industry').agg(
+        mean=(ga_choice, 'mean'),
+        std=(ga_choice, 'std'),
+        median=(ga_choice, 'median'),
+        first_decile=(ga_choice, lambda x: np.percentile(x.dropna(), 10)),
+        tenth_decile=(ga_choice, lambda x: np.percentile(x.dropna(), 90)),
+        max=(ga_choice, 'max'),
+        total_market_cap=('market_cap', 'sum')
+    ).reset_index()
+
+    # Optionally merge industry names here if needed
+        # Step 1: Load Excel with industry names (you likely already loaded this)
+    industry_info = pd.read_excel("/Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx")
+    industry_info = industry_info[['Industry number', 'Industry description']].drop_duplicates()
+    industry_info.columns = ['ff48_industry', 'industry_name']
+    industry_info['ff48_industry'] = pd.to_numeric(industry_info['ff48_industry'], errors='coerce').astype('Int64')
+
+    # Step 2: Merge into summary_df
+    summary_df = pd.merge(summary_df, industry_info, on='ff48_industry', how='left')
 
 ########################################
 ### Main Execution ###
@@ -598,6 +632,27 @@ def main(ga_choice="goodwill_to_equity_lagged", industries=None):
     FF48_MAPPING = load_ff48_mapping_from_excel("/Users/carlaamodt/thesis_project/Excel own/Industry classificationFF.xlsx")
     try:
         proc_df, decile_df, ff_df, ga_factors_df = load_data(ga_choice=ga_choice)
+                # --- START DIAGNOSTIC BLOCK ---
+        permnos_all = set(proc_df['permno'].unique())
+        permnos_decile = set(decile_df['permno'].unique())
+
+        missing_in_decile = permnos_all - permnos_decile
+        missing_in_proc = permnos_decile - permnos_all
+
+        logger.info(f"Unique permnos in processed data: {len(permnos_all)}")
+        logger.info(f"Unique permnos in decile data: {len(permnos_decile)}")
+        logger.info(f"Permnos missing in decile data: {len(missing_in_decile)}")
+        logger.info(f"Permnos missing in processed data: {len(missing_in_proc)}")
+
+        # Save for inspection
+        diagnostic_df = pd.DataFrame({
+            'permno': list(missing_in_decile),
+            'note': 'missing_in_decile'
+        })
+        diagnostic_path = os.path.join(output_dir, 'deciles', 'permno_discrepancy_diagnostics.csv')
+        diagnostic_df.to_csv(diagnostic_path, index=False)
+        logger.info(f"Saved permno discrepancy diagnostics to {diagnostic_path}")
+        # --- END DIAGNOSTIC BLOCK ---
         decile_analysis(proc_df, decile_df, ga_choice=ga_choice)
         ga_factor_diagnostics(proc_df, ff_df, ga_factors_df, ga_choice=ga_choice)
         industry_analysis(proc_df, decile_df, ff_df, ga_choice=ga_choice, industries=industries)
